@@ -412,6 +412,19 @@
       <div id="balance-settings"></div>
     </div>
     <div class="card">
+      <h2>「自由に使えるお金」の区切り日</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">
+        お金が大きく動く日（クレカ引き落としの10日、家賃の27日など）を「区切り日」にします。
+        「自由に使えるお金」は<b>次の次の区切り日まで</b>の入出金で計算されます。<br>
+        <span style="font-size:12px">例）今日が15日なら次は27日・その次の翌月10日まで／28日なら翌月10日・その次の27日まで</span>
+      </p>
+      <div id="settlement-list"></div>
+      <div class="row2" style="margin-top:12px">
+        <div><select id="new-settlement-day">${''}</select></div>
+        <div><button class="btn-sub" style="width:100%;padding:11px 0" onclick="addSettlementDay()">区切り日を追加</button></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>データ</h2>
       <p style="font-size:13px;color:var(--muted);line-height:1.7">
         データはこの端末のブラウザ内に保存されています（外部には送られません）。<br>
@@ -675,6 +688,24 @@ function recAmountFor(r, y, m) {
   return (r.overrides || {})[`${y}-${pad2(m)}`] ?? r.amount;
 }
 
+// 区切り日（既定10日・27日）のリスト
+function settlementDays() {
+  const d = (S.settlementDays && S.settlementDays.length) ? S.settlementDays.slice() : [10, 27];
+  return d.sort((a, b) => a - b);
+}
+// 「自由に使えるお金」の対象期間の終わり = 今日より後で2番目にくる区切り日（次の次）
+function freeMoneyHorizon(fromStr) {
+  const days = settlementDays();
+  let y = Number(fromStr.slice(0, 4)), m = Number(fromStr.slice(5, 7));
+  const dates = [];
+  for (let i = 0; i < 4; i++) {                 // 4か月先まで生成すれば足りる
+    for (const d of days) dates.push(clampDate(y, m, d));
+    [y, m] = shiftYM(y, m, 1);
+  }
+  const after = [...new Set(dates)].sort().filter(d => d > fromStr);
+  return after[1] || after[0] || addDaysStr(fromStr, 45);
+}
+
 // (py, pm)月に引き落とされる1回分の請求を計算
 function billFor(method, py, pm) {
   const b = method.billing;
@@ -809,13 +840,15 @@ function renderBalances() {
   if (rows.length > 1) {
     html += `<div class="bal-row total"><span class="bname">合計</span><span class="bval ${total < 0 ? 'minus' : ''}">${total < 0 ? '−' : ''}${yen(Math.abs(total))}</span></div>`;
   }
-  // 自由に使えるお金（底値方式）:
-  // 今後45日の入出金を日付順にたどり、現金＋銀行の合計が最も低くなる瞬間（底値）を出す。
+  // 自由に使えるお金（底値方式・区切り日まで）:
+  // 今日〜「次の次の区切り日」の入出金を日付順にたどり、現金＋銀行の合計が最も低くなる瞬間（底値）を出す。
   // 給料は振込日になるまで足さないので、まだ手元にないお金が使える扱いになることはない。
   const coreIds = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
+  const horizon = freeMoneyHorizon(todayStr());
   let run = [...coreIds].reduce((s, id) => s + balanceOf(id), 0);
   let free = run, minAt = null;
-  for (const it of upcomingPayments(45)) {
+  for (const it of upcomingPayments(60)) {
+    if (it.date > horizon) break;               // 区切り日を過ぎたら打ち切り（items は日付順）
     let delta = 0;
     if (it.toId) {
       if (coreIds.has(it.methodId)) delta -= it.amount;
@@ -830,7 +863,7 @@ function renderBalances() {
   if (coreIds.size) {
     html += `
     <div class="free-row">
-      <span class="fname">自由に使えるお金<span class="free-note">${minAt ? `一番きついのは ${fmtMD(minAt.date)}「${esc(minAt.name)}」の後。そこでもマイナスにならない額` : '今後45日の入出金を反映した額'}</span></span>
+      <span class="fname">自由に使えるお金<span class="free-note">${fmtMD(horizon)}まで${minAt ? `。一番きついのは ${fmtMD(minAt.date)}「${esc(minAt.name)}」の後` : 'の入出金を反映した額'}</span></span>
       <span class="fval ${free < 0 ? 'minus' : ''}">${free < 0 ? '−' : ''}${yen(Math.abs(free))}</span>
     </div>`;
   }
@@ -1436,6 +1469,17 @@ function renderSettings() {
         <button class="btn-mini" style="color:var(--expense)" onclick="deleteCategory('${type}', '${esc(c)}')">削除</button>
       </div>`).join('');
   }
+
+  const days = settlementDays();
+  $('settlement-list').innerHTML = days.map(d => `
+    <div class="list-item">
+      <div class="info"><div class="name">毎月 ${d}日</div></div>
+      ${days.length > 1 ? `<button class="btn-mini" style="color:var(--expense)" onclick="deleteSettlementDay(${d})">削除</button>` : '<span class="sub" style="color:var(--muted)">最低1つ必要</span>'}
+    </div>`).join('');
+  const used = new Set(days);
+  $('new-settlement-day').innerHTML = Array.from({ length: 31 }, (_, i) => i + 1)
+    .filter(d => !used.has(d))
+    .map(d => `<option value="${d}">${d}日</option>`).join('');
 }
 
 function addMethod() {
@@ -1483,6 +1527,21 @@ async function deleteCategory(type, name) {
   if (used) { toast('使用中のカテゴリは削除できません'); return; }
   if (!await appConfirm(`カテゴリ「${name}」を削除しますか？`)) return;
   S.categories[type] = S.categories[type].filter(c => c !== name);
+  persist(); render();
+}
+
+function addSettlementDay() {
+  const d = Number($('new-settlement-day').value);
+  if (!d) return;
+  S.settlementDays = [...new Set([...settlementDays(), d])].sort((a, b) => a - b);
+  persist(); render();
+  toast(`区切り日に ${d}日 を追加しました ✓`);
+}
+
+function deleteSettlementDay(d) {
+  const next = settlementDays().filter(x => x !== d);
+  if (!next.length) { toast('区切り日は最低1つ必要です'); return; }
+  S.settlementDays = next;
   persist(); render();
 }
 
@@ -1571,6 +1630,7 @@ const DEFAULT_DATA = {
   transactions: [],
   recurring: [],
   balances: {},
+  settlementDays: [10, 27],
 };
 
 function init() {
@@ -1581,6 +1641,7 @@ function init() {
     S = structuredClone(DEFAULT_DATA);
   }
   S.balances = S.balances || {};
+  S.settlementDays = S.settlementDays || [10, 27];
   resetEntryForm();
   showView('home');
 }
