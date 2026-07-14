@@ -254,7 +254,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>今後の入出金予定（60日以内）</h2>
+      <h2>今後の入出金予定（45日以内）</h2>
       <div id="upcoming-alerts"></div>
       <div id="upcoming-list"></div>
     </div>
@@ -348,8 +348,14 @@
           </select>
         </div>
         <div id="r-month-wrap" style="display:none"><label>月</label><select id="r-month"></select></div>
-        <div><label>支払日</label><select id="r-day"></select></div>
+        <div><label id="r-day-label">支払日</label><select id="r-day"></select></div>
       </div>
+      <label>日付が土日祝のとき</label>
+      <select id="r-holiday">
+        <option value="none">そのまま（調整しない）</option>
+        <option value="prev">前の営業日にずらす（給料など）</option>
+        <option value="next">次の営業日にずらす</option>
+      </select>
       <div class="row2">
         <div><label>カテゴリ</label><select id="r-category"></select></div>
         <div><label>支払い・受け取り方法</label><select id="r-method"></select></div>
@@ -570,13 +576,13 @@ function dueItemsForViewMonth() {
   for (const r of S.recurring) {
     if (!r.active) continue;
     if (r.cycle === 'yearly' && r.month !== view.m) continue;
-    const day = Math.min(r.day, daysInMonth(view.y, view.m));
-    const dueDate = `${view.y}-${pad2(view.m)}-${pad2(day)}`;
+    const dueDate = recDueDate(r, view.y, view.m);
+    const amount = recAmountFor(r, view.y, view.m);
     const rec = S.transactions.find(t => t.recurringId === r.id && t.date.startsWith(monthPrefix()));
     let status = rec ? 'done' : (dueDate < today ? 'overdue' : 'upcoming');
-    items.push({ r, dueDate, day, status, recordedAmount: rec ? rec.amount : null });
+    items.push({ r, dueDate, amount, status, recordedAmount: rec ? rec.amount : null });
   }
-  items.sort((a, b) => a.day - b.day);
+  items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   return items;
 }
 
@@ -595,11 +601,11 @@ function renderDueList() {
     <div class="due-item">
       <div class="info">
         <div class="name">${esc(i.r.name)}</div>
-        <div class="sub">${view.m}/${i.day}・${esc(methodName(i.r.methodId))}</div>
+        <div class="sub">${fmtMD(i.dueDate)}・${esc(methodName(i.r.methodId))}</div>
       </div>
-      <div class="amt ${i.r.kind === 'income' ? 'income' : ''}">${i.r.kind === 'income' ? '+' : ''}${yen(i.recordedAmount ?? i.r.amount)}</div>
+      <div class="amt ${i.r.kind === 'income' ? 'income' : ''}">${i.r.kind === 'income' ? '+' : ''}${yen(i.recordedAmount ?? i.amount)}</div>
       ${chip[i.status]}
-      ${i.status !== 'done' ? `<button class="btn-record" onclick="recordFromRecurring('${i.r.id}','${i.dueDate}')">記帳</button>` : ''}
+      ${i.status !== 'done' ? `<button class="btn-record" onclick="recordFromRecurring('${i.r.id}','${i.dueDate}',${i.amount})">記帳</button>` : ''}
     </div>`).join('');
 }
 
@@ -613,6 +619,61 @@ function shiftYM(y, m, d) {
 function clampDate(y, m, day) { return `${y}-${pad2(m)}-${pad2(Math.min(day, daysInMonth(y, m)))}`; }
 const dayLabel = d => d >= 31 ? '月末' : `${d}日`;
 const fmtMD = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+
+/* ---------- 日本の祝日と営業日調整 ---------- */
+const _holidayCache = {};
+function nthMonday(y, m, n) {
+  const dow = new Date(y, m - 1, 1).getDay();
+  return 1 + ((8 - dow) % 7) + (n - 1) * 7;
+}
+function holidaysOf(y) {
+  if (_holidayCache[y]) return _holidayCache[y];
+  const set = new Set();
+  const add = (m, d) => set.add(`${y}-${pad2(m)}-${pad2(d)}`);
+  [[1, 1], [2, 11], [2, 23], [4, 29], [5, 3], [5, 4], [5, 5], [8, 11], [11, 3], [11, 23]].forEach(([m, d]) => add(m, d));
+  add(1, nthMonday(y, 1, 2));   // 成人の日
+  add(7, nthMonday(y, 7, 3));   // 海の日
+  add(9, nthMonday(y, 9, 3));   // 敬老の日
+  add(10, nthMonday(y, 10, 2)); // スポーツの日
+  add(3, Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)));  // 春分の日
+  add(9, Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)));  // 秋分の日
+  // 振替休日: 日曜と重なった祝日の直後の平日
+  for (const d of [...set]) {
+    const dt = new Date(d + 'T00:00:00');
+    if (dt.getDay() !== 0) continue;
+    do { dt.setDate(dt.getDate() + 1); } while (set.has(`${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`));
+    set.add(`${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`);
+  }
+  // 国民の休日: 祝日に挟まれた平日（9月に発生することがある）
+  for (let m = 1; m <= 12; m++) {
+    for (let d = 2; d < daysInMonth(y, m); d++) {
+      const cur = `${y}-${pad2(m)}-${pad2(d)}`;
+      if (!set.has(cur) && set.has(`${y}-${pad2(m)}-${pad2(d - 1)}`) && set.has(`${y}-${pad2(m)}-${pad2(d + 1)}`)
+          && new Date(cur + 'T00:00:00').getDay() !== 0) set.add(cur);
+    }
+  }
+  _holidayCache[y] = set;
+  return set;
+}
+function isBizDay(dateStr) {
+  const dow = new Date(dateStr + 'T00:00:00').getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !holidaysOf(Number(dateStr.slice(0, 4))).has(dateStr);
+}
+function adjustBiz(dateStr, rule) {
+  if (rule !== 'prev' && rule !== 'next') return dateStr;
+  const step = rule === 'prev' ? -1 : 1;
+  let d = dateStr;
+  while (!isBizDay(d)) d = addDaysStr(d, step);
+  return d;
+}
+// 固定費・定期収入の(y,m)月分: 実際の日付（土日祝調整後）と金額（月ごとの上書きを反映）
+function recDueDate(r, y, m) {
+  return adjustBiz(clampDate(y, m, r.day), r.holidayRule);
+}
+function recAmountFor(r, y, m) {
+  return (r.overrides || {})[`${y}-${pad2(m)}`] ?? r.amount;
+}
 
 // (py, pm)月に引き落とされる1回分の請求を計算
 function billFor(method, py, pm) {
@@ -700,11 +761,11 @@ function upcomingPayments(days) {
     for (let off = 0; off <= 2; off++) {
       const [y, mo] = shiftYM(cy, cm, off);
       if (r.cycle === 'yearly' && r.month !== mo) continue;
-      const due = clampDate(y, mo, r.day);
+      const due = recDueDate(r, y, mo);
       if (due < today || due > end) continue;
       if (S.transactions.some(t => t.recurringId === r.id && t.date.startsWith(`${y}-${pad2(mo)}`))) continue;
-      items.push({ date: due, name: r.name, amount: r.amount, methodId: r.methodId,
-                   flow: isIncome ? 'in' : 'out',
+      items.push({ date: due, name: r.name, amount: recAmountFor(r, y, mo), methodId: r.methodId,
+                   flow: isIncome ? 'in' : 'out', recId: r.id, ym: `${y}-${pad2(mo)}`,
                    note: isIncome ? '定期収入' : '固定費', noteClass: isIncome ? 'done' : 'upcoming' });
     }
   }
@@ -748,24 +809,52 @@ function renderBalances() {
   if (rows.length > 1) {
     html += `<div class="bal-row total"><span class="bname">合計</span><span class="bval ${total < 0 ? 'minus' : ''}">${total < 0 ? '−' : ''}${yen(Math.abs(total))}</span></div>`;
   }
-  // 自由に使えるお金 = 残高合計に今後60日の収入を足し、支払い予定をすべて引いた額
-  const balMap = {};
-  for (const m of rows) balMap[m.id] = balanceOf(m.id);
-  for (const it of upcomingPayments(60)) {
-    if (balMap[it.methodId] != null) balMap[it.methodId] += it.flow === 'in' ? it.amount : -it.amount;
-    if (it.toId && balMap[it.toId] != null) balMap[it.toId] += it.amount;
+  // 自由に使えるお金（底値方式）:
+  // 今後45日の入出金を日付順にたどり、現金＋銀行の合計が最も低くなる瞬間（底値）を出す。
+  // 給料は振込日になるまで足さないので、まだ手元にないお金が使える扱いになることはない。
+  const coreIds = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
+  let run = [...coreIds].reduce((s, id) => s + balanceOf(id), 0);
+  let free = run, minAt = null;
+  for (const it of upcomingPayments(45)) {
+    let delta = 0;
+    if (it.toId) {
+      if (coreIds.has(it.methodId)) delta -= it.amount;
+      if (coreIds.has(it.toId)) delta += it.amount;
+    } else if (coreIds.has(it.methodId)) {
+      delta = it.flow === 'in' ? it.amount : -it.amount;
+    }
+    if (!delta) continue;
+    run += delta;
+    if (run < free) { free = run; minAt = it; }
   }
-  const free = Object.values(balMap).reduce((s, v) => s + v, 0);
-  html += `
+  if (coreIds.size) {
+    html += `
     <div class="free-row">
-      <span class="fname">自由に使えるお金<span class="free-note">今後60日の収入と支払いを合計した後</span></span>
+      <span class="fname">自由に使えるお金<span class="free-note">${minAt ? `一番きついのは ${fmtMD(minAt.date)}「${esc(minAt.name)}」の後。そこでもマイナスにならない額` : '今後45日の入出金を反映した額'}</span></span>
       <span class="fval ${free < 0 ? 'minus' : ''}">${free < 0 ? '−' : ''}${yen(Math.abs(free))}</span>
     </div>`;
+  }
   $('balance-list').innerHTML = html;
 }
 
+// 固定費・定期収入の「この回だけ」の金額変更（給料額が月ごとに変わる時など）
+async function editOccurrence(recId, ym, label) {
+  const r = S.recurring.find(x => x.id === recId);
+  if (!r) return;
+  const cur = (r.overrides || {})[ym] ?? r.amount;
+  const val = await appPrompt(`「${r.name}」${label}分の金額（この回だけ変更。ふだんは${yen(r.amount)}）`, String(cur));
+  if (val == null || val.trim() === '') return;
+  const amount = Math.round(Number(val.replace(/[,，¥\s円]/g, '')));
+  if (isNaN(amount) || amount < 0) { toast('数字で入力してください'); return; }
+  r.overrides = r.overrides || {};
+  if (amount === r.amount) delete r.overrides[ym];
+  else r.overrides[ym] = amount;
+  persist(); render();
+  toast(`${label}分を ${yen(amount)} にしました ✓`);
+}
+
 function renderUpcoming() {
-  const items = upcomingPayments(60);
+  const items = upcomingPayments(45);
   const tracked = trackedMethods().filter(m => S.balances[m.id]);
   let alerts = '';
   if (!tracked.length) {
@@ -777,13 +866,13 @@ function renderUpcoming() {
       if (sf.lack) {
         alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
       } else {
-        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は今後60日の支払いに足ります（収入・支払いを合計した後の残り ${yen(sf.remain)}）</div>`;
+        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は今後45日の支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
       }
     }
   }
   $('upcoming-alerts').innerHTML = alerts;
   if (!items.length) {
-    $('upcoming-list').innerHTML = '<div class="empty">60日以内の支払い予定はありません</div>';
+    $('upcoming-list').innerHTML = '<div class="empty">45日以内の入出金予定はありません</div>';
     return;
   }
   // 各支払い後の残高をシミュレーション表示
@@ -807,10 +896,10 @@ function renderUpcoming() {
     }
     const isIn = i.flow === 'in';
     return `
-    <div class="due-item">
+    <div class="due-item" ${i.recId ? `onclick="editOccurrence('${i.recId}','${i.ym}','${fmtMD(i.date)}')" style="cursor:pointer"` : ''}>
       <div class="info">
-        <div class="name">${esc(i.name)}</div>
-        <div class="sub">${fmtMD(i.date)}・${esc(methodName(i.methodId))}${i.toId ? ' → ' + esc(methodName(i.toId)) : ''}</div>
+        <div class="name">${esc(i.name)}${i.recId ? ' <span style="color:var(--muted);font-size:12px">✎</span>' : ''}</div>
+        <div class="sub">${fmtMD(i.date)}・${esc(methodName(i.methodId))}${i.toId ? ' → ' + esc(methodName(i.toId)) : ''}${i.recId ? '・タップでこの回の金額を変更' : ''}</div>
       </div>
       <div style="text-align:right">
         <div class="amt ${isIn ? 'income' : ''}">${isIn ? '+' : ''}${yen(i.amount)}</div>
@@ -1140,7 +1229,7 @@ async function deleteEntry() {
   showView('history');
 }
 
-function recordFromRecurring(recId, dueDate) {
+function recordFromRecurring(recId, dueDate, amount) {
   const r = S.recurring.find(r => r.id === recId);
   if (!r) return;
   resetEntryForm();
@@ -1149,7 +1238,7 @@ function recordFromRecurring(recId, dueDate) {
   setEntryType(kind);
   fillCategorySelect($('f-category'), kind, r.category);
   fillMethodSelect($('f-method'), r.methodId);
-  $('f-amount').value = r.amount;
+  $('f-amount').value = amount ?? r.amount;
   $('f-date').value = dueDate;
   $('f-memo').value = r.name;
   showView('entry');
@@ -1189,6 +1278,8 @@ function openRecForm(id) {
   $('r-month').value = r && r.month ? r.month : (new Date().getMonth() + 1);
   $('r-day').innerHTML = Array.from({length:31}, (_, i) => `<option value="${i+1}">${i+1}日</option>`).join('');
   $('r-day').value = r ? r.day : 27;
+  $('r-holiday').value = r ? (r.holidayRule || 'none') : 'none';
+  $('r-day-label').textContent = kind === 'income' ? '入金日' : '支払日';
   fillCategorySelect($('r-category'), kind, r ? r.category : 'サブスク');
   fillMethodSelect($('r-method'), r ? r.methodId : (S.paymentMethods.find(m => m.type === 'credit') || S.paymentMethods[0]).id);
   toggleRecMonth();
@@ -1201,6 +1292,9 @@ function onRecKindChange() {
   fillMethodSelect($('r-method'), kind === 'income'
     ? (debitMethodId() || S.paymentMethods[0].id)
     : (S.paymentMethods.find(m => m.type === 'credit') || S.paymentMethods[0]).id);
+  $('r-day-label').textContent = kind === 'income' ? '入金日' : '支払日';
+  // 給料など収入は「前の営業日」振込が一般的なので初期値を切り替える
+  if (!editingRecId) $('r-holiday').value = kind === 'income' ? 'prev' : 'none';
 }
 
 function toggleRecMonth() {
@@ -1223,6 +1317,8 @@ function saveRec() {
     day: Number($('r-day').value),
     category: $('r-category').value,
     methodId: $('r-method').value,
+    holidayRule: $('r-holiday').value,
+    overrides: editingRecId ? (S.recurring.find(r => r.id === editingRecId).overrides || {}) : {},
     active: editingRecId ? S.recurring.find(r => r.id === editingRecId).active : true,
   };
   if (editingRecId) {
