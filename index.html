@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>家計簿</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f1f5f4;
+    --card: #ffffff;
+    --text: #1c2b2a;
+    --muted: #6b7d7b;
+    --line: #e2e8e7;
+    --accent: #0f766e;
+    --accent-soft: #e6f2f1;
+    --income: #15803d;
+    --expense: #dc2626;
+    --warn-bg: #fef2f2;
+    --warn: #b91c1c;
+    --ok-bg: #f0fdf4;
+    --ok: #15803d;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--text);
+    padding-bottom: calc(108px + env(safe-area-inset-bottom));
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--accent); color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 17px; font-weight: 700; }
+  .month-nav { display: flex; align-items: center; gap: 4px; }
+  .month-nav button {
+    background: rgba(255,255,255,.18); border: none; color: #fff;
+    width: 32px; height: 32px; border-radius: 8px; font-size: 16px; cursor: pointer;
+  }
+  .month-nav span { font-size: 15px; font-weight: 600; min-width: 96px; text-align: center; }
+
+  main { max-width: 640px; margin: 0 auto; padding: 14px 14px 8px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+
+  /* ホーム: 収支サマリー */
+  .summary { display: flex; text-align: center; }
+  .summary > div { flex: 1; }
+  .summary .label { font-size: 12px; color: var(--muted); }
+  .summary .val { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .val.income { color: var(--income); }
+  .val.expense { color: var(--expense); }
+
+  /* 支払い予定 */
+  .due-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; border-top: 1px solid var(--line);
+  }
+  .due-item:first-of-type { border-top: none; }
+  .due-item .info { flex: 1; min-width: 0; }
+  .due-item .name { font-weight: 600; font-size: 15px; }
+  .due-item .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .due-item .amt { font-weight: 700; white-space: nowrap; }
+  .due-item .amt.income { color: var(--income); }
+  .chip {
+    font-size: 11px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600;
+  }
+  .chip.done { background: var(--ok-bg); color: var(--ok); }
+  .chip.overdue { background: var(--warn-bg); color: var(--warn); }
+  .chip.upcoming { background: #eef2ff; color: #4338ca; }
+  .btn-record {
+    background: var(--accent); color: #fff; border: none;
+    padding: 7px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    white-space: nowrap;
+  }
+  .alert {
+    background: var(--warn-bg); color: var(--warn);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px;
+  }
+  .alert-ok {
+    background: var(--ok-bg); color: var(--ok);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px;
+  }
+
+  /* 残高 */
+  .bal-row { display: flex; align-items: center; padding: 7px 0; font-size: 15px; }
+  .bal-row .bname { flex: 1; font-weight: 600; }
+  .bal-row .bval { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bal-row.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 10px; }
+  .bal-row.total .bname { color: var(--muted); font-size: 13px; }
+  .bal-row .bval.minus { color: var(--expense); }
+  .free-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--accent-soft); border-radius: 10px;
+    padding: 10px 12px; margin-top: 10px;
+  }
+  .free-row .fname { flex: 1; font-weight: 700; font-size: 14px; color: var(--accent); }
+  .free-row .free-note { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 1px; }
+  .free-row .fval { font-weight: 800; font-size: 18px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .free-row .fval.minus { color: var(--expense); }
+  .due-item .after { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
+  .due-item .after.minus { color: var(--expense); font-weight: 700; }
+
+  /* 円グラフ＋凡例 */
+  .donut-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .donut-wrap svg { width: 150px; height: 150px; flex-shrink: 0; margin: 0 auto; }
+  .legend { flex: 1; min-width: 200px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .legend-row .dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+  .legend-row .lname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend-row .lpct { width: 40px; text-align: right; color: var(--muted); }
+  .legend-row .lval { width: 84px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .donut-center { font-size: 12px; fill: var(--muted); }
+  .donut-total { font-size: 17px; font-weight: 700; fill: var(--text); }
+
+  /* フォーム */
+  label { display: block; font-size: 13px; color: var(--muted); font-weight: 600; margin: 12px 0 5px; }
+  input, select, textarea {
+    width: 100%; font-size: 16px; padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--text);
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .seg { display: flex; background: var(--line); border-radius: 10px; padding: 3px; }
+  .seg button {
+    flex: 1; border: none; background: transparent; padding: 9px 0;
+    font-size: 15px; font-weight: 600; border-radius: 8px; color: var(--muted); cursor: pointer;
+  }
+  .seg button.on-expense { background: #fff; color: var(--expense); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .seg button.on-income { background: #fff; color: var(--income); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .seg button.on-transfer { background: #fff; color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .amount-input { font-size: 26px; font-weight: 700; text-align: right; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > div { flex: 1; }
+  .btn-primary {
+    width: 100%; background: var(--accent); color: #fff; border: none;
+    padding: 14px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 18px;
+  }
+  .btn-danger {
+    width: 100%; background: #fff; color: var(--expense); border: 1px solid var(--expense);
+    padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px;
+  }
+  .btn-sub {
+    background: var(--accent-soft); color: var(--accent); border: none;
+    padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-mini {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 5px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+
+  /* 履歴 */
+  .day-head { font-size: 12px; color: var(--muted); font-weight: 700; margin: 14px 2px 4px; }
+  .tx {
+    background: var(--card); border-radius: 12px; padding: 11px 14px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  .tx .info { flex: 1; min-width: 0; }
+  .tx .cat { font-weight: 600; font-size: 14px; }
+  .tx .memo { font-size: 12px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx .method { font-size: 11px; background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .tx .amt { font-weight: 700; white-space: nowrap; }
+  .tx .amt.income { color: var(--income); }
+  .tx .amt.transfer { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 0; }
+
+  /* 固定費・設定リスト */
+  .list-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 0; border-top: 1px solid var(--line);
+  }
+  .list-item:first-of-type { border-top: none; }
+  .list-item .info { flex: 1; min-width: 0; }
+  .list-item .name { font-weight: 600; font-size: 15px; }
+  .list-item .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .list-item.inactive .name, .list-item.inactive .sub { opacity: .45; }
+  .type-chip { font-size: 11px; background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 999px; }
+
+  /* 下部ナビ */
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    background: #fff; border-top: 1px solid var(--line);
+    display: flex; padding-bottom: calc(30px + env(safe-area-inset-bottom));
+  }
+  nav button {
+    flex: 1; border: none; background: none; padding: 10px 0 8px;
+    font-size: 10.5px; color: var(--muted); cursor: pointer; font-weight: 600;
+  }
+  nav button .ic { display: block; font-size: 21px; margin-bottom: 1px; }
+  nav button.active { color: var(--accent); }
+
+  #modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal {
+    background: var(--card); border-radius: var(--radius);
+    padding: 18px; width: 100%; max-width: 340px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  #modal-msg { font-size: 14px; line-height: 1.6; white-space: pre-wrap; font-weight: 600; }
+  #modal-input { margin-top: 12px; }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+  .modal-btns button { padding: 9px 18px; font-size: 14px; }
+
+  #toast {
+    position: fixed; bottom: calc(120px + env(safe-area-inset-bottom)); left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: #1c2b2a; color: #fff; padding: 10px 20px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none;
+    transition: all .25s; z-index: 100; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="header-title">家計簿</h1>
+  <div class="month-nav" id="month-nav">
+    <button onclick="moveMonth(-1)">‹</button>
+    <span id="month-label"></span>
+    <button onclick="moveMonth(1)">›</button>
+  </div>
+</header>
+
+<main>
+  <!-- ホーム -->
+  <div class="view" id="view-home">
+    <div class="card">
+      <h2>残高</h2>
+      <div id="balance-list"></div>
+    </div>
+    <div class="card">
+      <h2>今月の収支</h2>
+      <div class="summary">
+        <div><div class="label">収入</div><div class="val income" id="sum-income"></div></div>
+        <div><div class="label">支出</div><div class="val expense" id="sum-expense"></div></div>
+        <div><div class="label">収支</div><div class="val" id="sum-balance"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>今後の入出金予定（60日以内）</h2>
+      <div id="upcoming-alerts"></div>
+      <div id="upcoming-list"></div>
+    </div>
+    <div class="card">
+      <h2>この月の固定費・支払い予定</h2>
+      <div id="due-alert"></div>
+      <div id="due-list"></div>
+    </div>
+    <div class="card" id="credit-bills-card">
+      <h2>クレジットカードの引き落とし</h2>
+      <div id="credit-bills"></div>
+    </div>
+    <div class="card">
+      <h2>カテゴリ別支出</h2>
+      <div id="break-category"></div>
+    </div>
+    <div class="card">
+      <h2>支払い方法別支出</h2>
+      <div id="break-method"></div>
+    </div>
+    <div class="card">
+      <h2>収入の内訳</h2>
+      <div id="break-income"></div>
+    </div>
+  </div>
+
+  <!-- 記帳 -->
+  <div class="view" id="view-entry">
+    <div class="card">
+      <div class="seg" id="type-seg">
+        <button id="seg-expense" onclick="setEntryType('expense')">支出</button>
+        <button id="seg-income" onclick="setEntryType('income')">収入</button>
+        <button id="seg-transfer" onclick="setEntryType('transfer')">振替</button>
+      </div>
+      <label>金額（円）</label>
+      <input type="number" inputmode="numeric" id="f-amount" class="amount-input" placeholder="0" oninput="updateSplitHint()">
+      <div class="row2">
+        <div><label>日付</label><input type="date" id="f-date"></div>
+        <div id="f-category-wrap"><label>カテゴリ</label><select id="f-category"></select></div>
+      </div>
+      <div id="f-method-wrap">
+        <label>支払い方法</label>
+        <select id="f-method" onchange="updateSplitHint()"></select>
+        <div id="split-wrap">
+          <div id="split-rows"></div>
+          <div id="split-hint" style="font-size:12px;font-weight:600;margin-top:6px"></div>
+          <button class="btn-mini" style="margin-top:8px" onclick="addSplitRow()">＋ ポイント等との併用払い</button>
+        </div>
+      </div>
+      <div class="row2" id="f-transfer-wrap" style="display:none">
+        <div><label>移動元（から）</label><select id="f-from"></select></div>
+        <div><label>移動先（へ）</label><select id="f-to"></select></div>
+      </div>
+      <label>メモ（任意）</label>
+      <input type="text" id="f-memo" placeholder="例: コンビニ、〇〇と昼ごはん">
+      <button class="btn-primary" id="entry-save" onclick="saveEntry()">記帳する</button>
+      <button class="btn-danger" id="entry-delete" style="display:none" onclick="deleteEntry()">この記録を削除</button>
+    </div>
+  </div>
+
+  <!-- 履歴 -->
+  <div class="view" id="view-history">
+    <div id="history-list"></div>
+  </div>
+
+  <!-- 固定費 -->
+  <div class="view" id="view-recurring">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h2 style="margin:0">毎月・毎年の固定費と定期収入</h2>
+        <button class="btn-sub" onclick="openRecForm()">＋ 追加</button>
+      </div>
+      <div id="rec-list"></div>
+    </div>
+    <div class="card" id="rec-form" style="display:none">
+      <h2 id="rec-form-title">固定費・定期収入を追加</h2>
+      <label>種別</label>
+      <select id="r-kind" onchange="onRecKindChange()">
+        <option value="expense">支出（サブスク・家賃・光熱費など）</option>
+        <option value="income">収入（バイト代・仕送りなど）</option>
+      </select>
+      <label>名前</label>
+      <input type="text" id="r-name" placeholder="例: Netflix、電気代、バイト代">
+      <label>金額（円）　※電気代など変動するものは目安でOK。記帳時に直せます</label>
+      <input type="number" inputmode="numeric" id="r-amount" placeholder="0">
+      <div class="row2">
+        <div><label>周期</label>
+          <select id="r-cycle" onchange="toggleRecMonth()">
+            <option value="monthly">毎月</option>
+            <option value="yearly">毎年</option>
+          </select>
+        </div>
+        <div id="r-month-wrap" style="display:none"><label>月</label><select id="r-month"></select></div>
+        <div><label>支払日</label><select id="r-day"></select></div>
+      </div>
+      <div class="row2">
+        <div><label>カテゴリ</label><select id="r-category"></select></div>
+        <div><label>支払い・受け取り方法</label><select id="r-method"></select></div>
+      </div>
+      <button class="btn-primary" onclick="saveRec()">保存</button>
+      <button class="btn-danger" onclick="closeRecForm()" style="border-color:var(--line);color:var(--muted)">キャンセル</button>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div class="view" id="view-settings">
+    <div class="card">
+      <h2>支払い方法</h2>
+      <div id="method-list"></div>
+      <div class="row2" style="margin-top:12px">
+        <div style="flex:2"><input type="text" id="new-method-name" placeholder="名前（例: 楽天カード）"></div>
+        <div>
+          <select id="new-method-type">
+            <option value="credit">クレカ</option>
+            <option value="cash">現金</option>
+            <option value="qr">QR決済</option>
+            <option value="ic">交通系IC</option>
+            <option value="point">ポイント</option>
+            <option value="bank">銀行</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="addMethod()">支払い方法を追加</button>
+    </div>
+    <div class="card">
+      <h2>支出カテゴリ</h2>
+      <div id="cat-expense-list"></div>
+      <div class="row2" style="margin-top:12px">
+        <div style="flex:2"><input type="text" id="new-cat-expense" placeholder="新しいカテゴリ名"></div>
+        <div><button class="btn-sub" style="width:100%;padding:11px 0" onclick="addCategory('expense')">追加</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>収入カテゴリ</h2>
+      <div id="cat-income-list"></div>
+      <div class="row2" style="margin-top:12px">
+        <div style="flex:2"><input type="text" id="new-cat-income" placeholder="新しいカテゴリ名"></div>
+        <div><button class="btn-sub" style="width:100%;padding:11px 0" onclick="addCategory('income')">追加</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>残高の設定</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">
+        管理したい支払い方法（現金・銀行口座・Suica・PayPayなど）の実際の残高を入力すると、
+        以降の記帳・振替・チャージ・クレカ引き落としに合わせて自動で増減します。
+        <b>入力したものだけ</b>がホームに表示されます。ズレてきたらいつでも入力し直せます。
+      </p>
+      <div id="balance-settings"></div>
+    </div>
+    <div class="card">
+      <h2>データ</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">
+        データはこの端末のブラウザ内に保存されています（外部には送られません）。<br>
+        機種変更・紛失に備えて、ときどきバックアップを保存しておきましょう。
+      </p>
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="exportData()">バックアップをダウンロード（ファイル）</button>
+      <button class="btn-sub" style="margin-top:8px;width:100%" onclick="backupToClipboard()">バックアップをコピー（テキスト）</button>
+      <button class="btn-sub" style="margin-top:8px;width:100%" onclick="restoreFromText()">バックアップから復元（テキストを貼り付け）</button>
+      <button class="btn-mini" style="margin-top:12px;width:100%" onclick="$('import-file').click()">バックアップファイルから復元</button>
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importData(this)">
+    </div>
+  </div>
+</main>
+
+<nav>
+  <button data-view="home" onclick="showView('home')"><span class="ic">🏠</span>ホーム</button>
+  <button data-view="entry" onclick="showView('entry')"><span class="ic">✏️</span>記帳</button>
+  <button data-view="history" onclick="showView('history')"><span class="ic">📋</span>履歴</button>
+  <button data-view="recurring" onclick="showView('recurring')"><span class="ic">🔁</span>固定費</button>
+  <button data-view="settings" onclick="showView('settings')"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div id="modal-bg" style="display:none">
+  <div class="modal">
+    <div id="modal-msg"></div>
+    <input type="text" id="modal-input" style="display:none">
+    <textarea id="modal-textarea" rows="7" style="display:none;margin-top:12px;font-size:12px"></textarea>
+    <div class="modal-btns">
+      <button class="btn-mini" id="modal-cancel">キャンセル</button>
+      <button class="btn-record" id="modal-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+let S = null;                       // 全データ
+const now = new Date();
+let view = { y: now.getFullYear(), m: now.getMonth() + 1 };  // 表示中の月
+let currentView = 'home';
+let entryType = 'expense';
+let editingId = null;               // 編集中の記録ID
+let entryRecurringId = null;        // 固定費からの記帳
+let editingRecId = null;            // 編集中の固定費ID
+
+const TYPE_LABEL = { cash:'現金', credit:'クレカ', qr:'QR決済', ic:'交通系IC', point:'ポイント', bank:'銀行', other:'その他' };
+
+// 色覚多様性検証済みのカテゴリカルパレット（8色）。9項目以上は「その他」に集約
+const PALETTE = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'];
+const FOLD_COLOR = '#898781';
+const FOLD_NAME = 'その他（まとめ）';
+
+const $ = id => document.getElementById(id);
+const yen = n => '¥' + Number(n).toLocaleString('ja-JP');
+const pad2 = n => String(n).padStart(2, '0');
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
+const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const methodName = id => (S.paymentMethods.find(m => m.id === id) || {}).name || '（不明）';
+
+/* claude.ai上ではブラウザ標準のconfirm/promptが無効化されるため、アプリ内ダイアログを使う */
+function showModal(msg, withInput, initial, withTextarea) {
+  return new Promise(resolve => {
+    $('modal-msg').textContent = msg;
+    const input = $('modal-input');
+    const ta = $('modal-textarea');
+    input.style.display = withInput ? 'block' : 'none';
+    input.value = withInput ? (initial || '') : '';
+    ta.style.display = withTextarea ? 'block' : 'none';
+    ta.value = withTextarea ? (initial || '') : '';
+    $('modal-bg').style.display = 'flex';
+    const close = val => {
+      $('modal-bg').style.display = 'none';
+      $('modal-ok').onclick = $('modal-cancel').onclick = null;
+      resolve(val);
+    };
+    $('modal-ok').onclick = () => close(withTextarea ? ta.value : withInput ? input.value : true);
+    $('modal-cancel').onclick = () => close(withInput || withTextarea ? null : false);
+    if (withInput) input.focus();
+  });
+}
+const appConfirm = msg => showModal(msg, false);
+const appPrompt = (msg, initial) => showModal(msg, true, initial);
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+const STORE_KEY = 'kakeibo-data-v1';
+function persist() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(S));
+  } catch {
+    toast('⚠ 保存に失敗しました（ストレージ容量を確認）');
+  }
+}
+
+/* ---------- 画面切り替え ---------- */
+function showView(name) {
+  currentView = name;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + name).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  $('month-nav').style.visibility = (name === 'home' || name === 'history') ? 'visible' : 'hidden';
+  const titles = { home:'家計簿', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', settings:'設定' };
+  $('header-title').textContent = titles[name];
+  render();
+  window.scrollTo(0, 0);
+}
+
+function moveMonth(d) {
+  view.m += d;
+  if (view.m < 1) { view.m = 12; view.y--; }
+  if (view.m > 12) { view.m = 1; view.y++; }
+  render();
+}
+
+/* ---------- 描画 ---------- */
+function monthPrefix() { return `${view.y}-${pad2(view.m)}`; }
+function txInViewMonth() { return S.transactions.filter(t => t.date.startsWith(monthPrefix())); }
+
+function render() {
+  if (!S) return;
+  $('month-label').textContent = `${view.y}年${view.m}月`;
+  if (currentView === 'home') renderHome();
+  if (currentView === 'history') renderHistory();
+  if (currentView === 'entry') renderEntryOptions();
+  if (currentView === 'recurring') renderRecurring();
+  if (currentView === 'settings') renderSettings();
+}
+
+function renderHome() {
+  const txs = txInViewMonth();
+  const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  $('sum-income').textContent = yen(income);
+  $('sum-expense').textContent = yen(expense);
+  const bal = income - expense;
+  $('sum-balance').textContent = (bal < 0 ? '−' : '') + yen(Math.abs(bal));
+  $('sum-balance').className = 'val ' + (bal >= 0 ? 'income' : 'expense');
+
+  renderBalances();
+  renderUpcoming();
+  renderDueList();
+  renderCreditBills();
+  renderDonut('break-category', groupSum(txs, t => t.category, 'expense'), S.categories.expense);
+  renderDonut('break-method', groupSum(txs, t => methodName(t.methodId), 'expense'), S.paymentMethods.map(m => m.name));
+  renderDonut('break-income', groupSum(txs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
+}
+
+function dueItemsForViewMonth() {
+  const items = [];
+  const today = todayStr();
+  for (const r of S.recurring) {
+    if (!r.active) continue;
+    if (r.cycle === 'yearly' && r.month !== view.m) continue;
+    const day = Math.min(r.day, daysInMonth(view.y, view.m));
+    const dueDate = `${view.y}-${pad2(view.m)}-${pad2(day)}`;
+    const rec = S.transactions.find(t => t.recurringId === r.id && t.date.startsWith(monthPrefix()));
+    let status = rec ? 'done' : (dueDate < today ? 'overdue' : 'upcoming');
+    items.push({ r, dueDate, day, status, recordedAmount: rec ? rec.amount : null });
+  }
+  items.sort((a, b) => a.day - b.day);
+  return items;
+}
+
+function renderDueList() {
+  const items = dueItemsForViewMonth();
+  const overdue = items.filter(i => i.status === 'overdue');
+  $('due-alert').innerHTML = overdue.length
+    ? `<div class="alert">⚠ 支払日・入金日を過ぎた未記帳の項目が ${overdue.length} 件あります。実際のお金の動きを確認して記帳しましょう。</div>`
+    : '';
+  if (!items.length) {
+    $('due-list').innerHTML = '<div class="empty">この月に支払い予定の固定費はありません。<br>「固定費」タブからサブスクや光熱費を登録できます。</div>';
+    return;
+  }
+  const chip = { done:'<span class="chip done">記帳済み ✓</span>', overdue:'<span class="chip overdue">未記帳！</span>', upcoming:'<span class="chip upcoming">予定</span>' };
+  $('due-list').innerHTML = items.map(i => `
+    <div class="due-item">
+      <div class="info">
+        <div class="name">${esc(i.r.name)}</div>
+        <div class="sub">${view.m}/${i.day}・${esc(methodName(i.r.methodId))}</div>
+      </div>
+      <div class="amt ${i.r.kind === 'income' ? 'income' : ''}">${i.r.kind === 'income' ? '+' : ''}${yen(i.recordedAmount ?? i.r.amount)}</div>
+      ${chip[i.status]}
+      ${i.status !== 'done' ? `<button class="btn-record" onclick="recordFromRecurring('${i.r.id}','${i.dueDate}')">記帳</button>` : ''}
+    </div>`).join('');
+}
+
+/* ---------- クレカ引き落とし集計 ---------- */
+function shiftYM(y, m, d) {
+  m += d;
+  while (m < 1) { m += 12; y--; }
+  while (m > 12) { m -= 12; y++; }
+  return [y, m];
+}
+function clampDate(y, m, day) { return `${y}-${pad2(m)}-${pad2(Math.min(day, daysInMonth(y, m)))}`; }
+const dayLabel = d => d >= 31 ? '月末' : `${d}日`;
+const fmtMD = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+
+// (py, pm)月に引き落とされる1回分の請求を計算
+function billFor(method, py, pm) {
+  const b = method.billing;
+  const [cy, cm] = shiftYM(py, pm, -b.payMonthOffset);       // 締め月
+  const end = clampDate(cy, cm, b.closingDay);               // 締め日
+  const [qy, qm] = shiftYM(cy, cm, -1);
+  const prevEnd = clampDate(qy, qm, b.closingDay);           // 前回の締め日
+  // クレカ払いの支出＋クレカからのチャージ（振替）が請求に乗る
+  const amount = S.transactions
+    .filter(t => (t.type === 'expense' || t.type === 'transfer') && t.methodId === method.id && t.date > prevEnd && t.date <= end)
+    .reduce((s, t) => s + t.amount, 0);
+  const d = new Date(prevEnd + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  const start = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  return { start, end, payDate: clampDate(py, pm, b.payDay), amount, settled: end < todayStr() };
+}
+
+/* ---------- 残高と今後の支払い予定 ---------- */
+function trackedMethods() { return S.paymentMethods.filter(m => m.type !== 'credit'); }
+function debitMethodId() {
+  const b = S.paymentMethods.find(m => m.type === 'bank');
+  return b ? b.id : null;
+}
+function addDaysStr(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// 残高 = 設定時の金額 ± 設定後の記帳・振替（今日まで） − クレカ引き落とし
+function balanceOf(methodId) {
+  const a = S.balances[methodId];
+  if (!a) return null;
+  const today = todayStr();
+  let bal = a.amount;
+  for (const t of S.transactions) {
+    // 設定日より前の日付の記帳は設定した残高に織り込み済み。設定日当日は設定後の記帳のみ数える
+    const counts = t.date > a.date || (t.date === a.date && (t.createdAt || 0) > a.setAt);
+    if (!counts || t.date > today) continue;
+    if (t.type === 'expense' && t.methodId === methodId) bal -= t.amount;
+    else if (t.type === 'income' && t.methodId === methodId) bal += t.amount;
+    else if (t.type === 'transfer') {
+      if (t.methodId === methodId) bal -= t.amount;
+      if (t.toId === methodId) bal += t.amount;
+    }
+  }
+  {
+    const now = new Date();
+    for (const c of S.paymentMethods.filter(m => m.type === 'credit' && m.billing)) {
+      if ((c.billing.debitMethodId || debitMethodId()) !== methodId) continue;
+      let y = Number(a.date.slice(0, 4)), mo = Number(a.date.slice(5, 7));
+      while (y < now.getFullYear() || (y === now.getFullYear() && mo <= now.getMonth() + 1)) {
+        const b = billFor(c, y, mo);
+        if (b.payDate > a.date && b.payDate <= today) bal -= b.amount;
+        [y, mo] = shiftYM(y, mo, 1);
+      }
+    }
+  }
+  return bal;
+}
+
+// 今後days日以内の支払い予定（クレカ請求＋未記帳の固定費＋未来日付の記帳）
+function upcomingPayments(days) {
+  const today = todayStr();
+  const end = addDaysStr(today, days);
+  const now = new Date();
+  const cy = now.getFullYear(), cm = now.getMonth() + 1;
+  const items = [];
+  for (const c of S.paymentMethods.filter(m => m.type === 'credit' && m.billing)) {
+    const debitId = c.billing.debitMethodId || debitMethodId();
+    for (let off = 0; off <= 3; off++) {
+      const [py, pm] = shiftYM(cy, cm, off);
+      const b = billFor(c, py, pm);
+      if (b.payDate >= today && b.payDate <= end && b.amount > 0)
+        items.push({ date: b.payDate, name: `${c.name} 引き落とし`, amount: b.amount, methodId: debitId,
+                     note: b.settled ? '確定' : '集計中', noteClass: b.settled ? 'done' : 'upcoming' });
+    }
+  }
+  for (const r of S.recurring) {
+    if (!r.active) continue;
+    const isIncome = r.kind === 'income';
+    const pm2 = S.paymentMethods.find(m => m.id === r.methodId);
+    if (!isIncome && pm2 && pm2.type === 'credit') continue;  // クレカ払いの固定費は請求側に含まれる
+    for (let off = 0; off <= 2; off++) {
+      const [y, mo] = shiftYM(cy, cm, off);
+      if (r.cycle === 'yearly' && r.month !== mo) continue;
+      const due = clampDate(y, mo, r.day);
+      if (due < today || due > end) continue;
+      if (S.transactions.some(t => t.recurringId === r.id && t.date.startsWith(`${y}-${pad2(mo)}`))) continue;
+      items.push({ date: due, name: r.name, amount: r.amount, methodId: r.methodId,
+                   flow: isIncome ? 'in' : 'out',
+                   note: isIncome ? '定期収入' : '固定費', noteClass: isIncome ? 'done' : 'upcoming' });
+    }
+  }
+  for (const t of S.transactions) {
+    if (t.date <= today || t.date > end) continue;
+    if (t.type === 'expense') {
+      items.push({ date: t.date, name: t.memo || t.category, amount: t.amount, methodId: t.methodId, note: '記帳済み', noteClass: 'done' });
+    } else if (t.type === 'income') {
+      items.push({ date: t.date, name: t.memo || t.category, amount: t.amount, methodId: t.methodId, flow: 'in', note: '収入予定', noteClass: 'done' });
+    } else if (t.type === 'transfer') {
+      items.push({ date: t.date, name: t.memo || '振替', amount: t.amount, methodId: t.methodId, toId: t.toId, note: '振替', noteClass: 'upcoming' });
+    }
+  }
+  items.sort((a, b) => a.date.localeCompare(b.date));
+  return items;
+}
+
+function shortfallFor(methodId, items) {
+  let bal = balanceOf(methodId);
+  for (const it of items) {
+    if (it.methodId === methodId) bal += it.flow === 'in' ? it.amount : -it.amount;
+    else if (it.toId === methodId) bal += it.amount;
+    else continue;
+    if (bal < 0) return { lack: -bal, date: it.date, name: it.name };
+  }
+  return { remain: bal };
+}
+
+function renderBalances() {
+  const rows = trackedMethods().filter(m => S.balances[m.id]);
+  if (!rows.length) {
+    $('balance-list').innerHTML = '<div class="empty">「設定」タブで現金・銀行口座の残高を入力すると、ここに現在の残高が表示されます</div>';
+    return;
+  }
+  let total = 0;
+  let html = rows.map(m => {
+    const b = balanceOf(m.id);
+    total += b;
+    return `<div class="bal-row"><span class="bname">${esc(m.name)}</span><span class="bval ${b < 0 ? 'minus' : ''}">${b < 0 ? '−' : ''}${yen(Math.abs(b))}</span></div>`;
+  }).join('');
+  if (rows.length > 1) {
+    html += `<div class="bal-row total"><span class="bname">合計</span><span class="bval ${total < 0 ? 'minus' : ''}">${total < 0 ? '−' : ''}${yen(Math.abs(total))}</span></div>`;
+  }
+  // 自由に使えるお金 = 残高合計に今後60日の収入を足し、支払い予定をすべて引いた額
+  const balMap = {};
+  for (const m of rows) balMap[m.id] = balanceOf(m.id);
+  for (const it of upcomingPayments(60)) {
+    if (balMap[it.methodId] != null) balMap[it.methodId] += it.flow === 'in' ? it.amount : -it.amount;
+    if (it.toId && balMap[it.toId] != null) balMap[it.toId] += it.amount;
+  }
+  const free = Object.values(balMap).reduce((s, v) => s + v, 0);
+  html += `
+    <div class="free-row">
+      <span class="fname">自由に使えるお金<span class="free-note">今後60日の収入と支払いを合計した後</span></span>
+      <span class="fval ${free < 0 ? 'minus' : ''}">${free < 0 ? '−' : ''}${yen(Math.abs(free))}</span>
+    </div>`;
+  $('balance-list').innerHTML = html;
+}
+
+function renderUpcoming() {
+  const items = upcomingPayments(60);
+  const tracked = trackedMethods().filter(m => S.balances[m.id]);
+  let alerts = '';
+  if (!tracked.length) {
+    alerts = '<div class="empty" style="padding:4px 0 10px">「設定」タブで残高を入力すると、支払いに足りるかを自動チェックします</div>';
+  } else {
+    for (const m of tracked) {
+      if (!items.some(i => i.methodId === m.id || i.toId === m.id)) continue;
+      const sf = shortfallFor(m.id, items);
+      if (sf.lack) {
+        alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
+      } else {
+        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は今後60日の支払いに足ります（収入・支払いを合計した後の残り ${yen(sf.remain)}）</div>`;
+      }
+    }
+  }
+  $('upcoming-alerts').innerHTML = alerts;
+  if (!items.length) {
+    $('upcoming-list').innerHTML = '<div class="empty">60日以内の支払い予定はありません</div>';
+    return;
+  }
+  // 各支払い後の残高をシミュレーション表示
+  const balMap = {};
+  for (const m of tracked) balMap[m.id] = balanceOf(m.id);
+  $('upcoming-list').innerHTML = items.map(i => {
+    let afterHtml = '';
+    const showAfter = accId => {
+      const after = balMap[accId];
+      afterHtml = `<div class="after ${after < 0 ? 'minus' : ''}">この後 ${after < 0 ? '−' : ''}${yen(Math.abs(after))}</div>`;
+    };
+    if (i.toId) {
+      const fromTracked = balMap[i.methodId] != null;
+      if (fromTracked) balMap[i.methodId] -= i.amount;
+      if (balMap[i.toId] != null) balMap[i.toId] += i.amount;
+      if (fromTracked) showAfter(i.methodId);
+      else if (balMap[i.toId] != null) showAfter(i.toId);
+    } else if (balMap[i.methodId] != null) {
+      balMap[i.methodId] += i.flow === 'in' ? i.amount : -i.amount;
+      showAfter(i.methodId);
+    }
+    const isIn = i.flow === 'in';
+    return `
+    <div class="due-item">
+      <div class="info">
+        <div class="name">${esc(i.name)}</div>
+        <div class="sub">${fmtMD(i.date)}・${esc(methodName(i.methodId))}${i.toId ? ' → ' + esc(methodName(i.toId)) : ''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="amt ${isIn ? 'income' : ''}">${isIn ? '+' : ''}${yen(i.amount)}</div>
+        ${afterHtml}
+      </div>
+      <span class="chip ${i.noteClass}">${i.note}</span>
+    </div>`;
+  }).join('');
+}
+
+async function setBalance(id) {
+  const m = S.paymentMethods.find(m => m.id === id);
+  const cur = balanceOf(id);
+  const val = await appPrompt(`「${m.name}」の現在の残高を入力（円）`, cur != null ? String(cur) : '');
+  if (val == null || val.trim() === '') return;
+  const amount = Math.round(Number(val.replace(/[,，¥\s円]/g, '')));
+  if (isNaN(amount)) { toast('数字で入力してください'); return; }
+  S.balances[id] = { amount, date: todayStr(), setAt: Date.now() };
+  persist(); render();
+  toast('残高を設定しました ✓');
+}
+
+function renderCreditBills() {
+  const cards = S.paymentMethods.filter(m => m.type === 'credit');
+  const wrap = $('credit-bills-card');
+  if (!cards.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  let html = '';
+  for (const c of cards) {
+    if (!c.billing) {
+      html += `
+        <div class="due-item">
+          <div class="info">
+            <div class="name">${esc(c.name)}</div>
+            <div class="sub">締め日・支払日が未設定です。「設定」タブの「締日」ボタンから設定すると引き落とし額を自動集計します</div>
+          </div>
+        </div>`;
+      continue;
+    }
+    // 表示月とその翌月に引き落とされる2回分を表示
+    for (const off of [0, 1]) {
+      const [py, pm] = shiftYM(view.y, view.m, off);
+      const b = billFor(c, py, pm);
+      html += `
+        <div class="due-item">
+          <div class="info">
+            <div class="name">${esc(c.name)}</div>
+            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分</div>
+          </div>
+          <div class="amt">${yen(b.amount)}</div>
+          ${b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+        </div>`;
+    }
+  }
+  $('credit-bills').innerHTML = html;
+}
+
+function groupSum(txs, keyFn, type) {
+  const map = new Map();
+  for (const t of txs) {
+    if (t.type !== type) continue;
+    const k = keyFn(t);
+    map.set(k, (map.get(k) || 0) + t.amount);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+/* 円グラフ（ドーナツ）＋凡例。masterList順で色を安定割り当て、9項目以上は下位をまとめる */
+function renderDonut(elId, entriesIn, masterList, emptyMsg) {
+  if (!entriesIn.length) {
+    $(elId).innerHTML = `<div class="empty">${emptyMsg || 'この月の支出はまだありません'}</div>`;
+    return;
+  }
+  let entries = entriesIn.slice();
+  let fold = null;
+  if (entries.length > 8) {
+    fold = [FOLD_NAME, entries.slice(7).reduce((s, e) => s + e[1], 0)];
+    entries = entries.slice(0, 7);
+  }
+  const colorOf = new Map(
+    entries.slice()
+      .sort((a, b) => masterList.indexOf(a[0]) - masterList.indexOf(b[0]))
+      .map((e, i) => [e[0], PALETTE[i % PALETTE.length]])
+  );
+  if (fold) { entries.push(fold); colorOf.set(FOLD_NAME, FOLD_COLOR); }
+  const total = entries.reduce((s, e) => s + e[1], 0);
+
+  const cx = 75, cy = 75, r = 73;
+  let angle = -Math.PI / 2;
+  let paths = '';
+  for (const [name, sum] of entries) {
+    const frac = sum / total;
+    const title = `<title>${esc(name)} ${yen(sum)}（${Math.round(frac * 100)}%）</title>`;
+    if (frac >= 0.999) {
+      paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${colorOf.get(name)}">${title}</circle>`;
+      break;
+    }
+    const a1 = angle + frac * 2 * Math.PI;
+    const large = a1 - angle > Math.PI ? 1 : 0;
+    const x0 = cx + r * Math.cos(angle), y0 = cy + r * Math.sin(angle);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    paths += `<path d="M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z"
+      fill="${colorOf.get(name)}" stroke="var(--card)" stroke-width="2">${title}</path>`;
+    angle = a1;
+  }
+  const svg = `
+    <svg viewBox="0 0 150 150" role="img" aria-label="内訳の円グラフ">
+      ${paths}
+      <circle cx="${cx}" cy="${cy}" r="44" fill="var(--card)"/>
+      <text x="${cx}" y="${cy - 6}" text-anchor="middle" class="donut-center">合計</text>
+      <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="donut-total">${yen(total)}</text>
+    </svg>`;
+  const legend = entries.map(([name, sum]) => `
+    <div class="legend-row">
+      <span class="dot" style="background:${colorOf.get(name)}"></span>
+      <span class="lname">${esc(name)}</span>
+      <span class="lpct">${Math.round(sum / total * 100)}%</span>
+      <span class="lval">${yen(sum)}</span>
+    </div>`).join('');
+  $(elId).innerHTML = `<div class="donut-wrap">${svg}<div class="legend">${legend}</div></div>`;
+}
+
+function renderHistory() {
+  const txs = txInViewMonth().slice().sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+  if (!txs.length) { $('history-list').innerHTML = '<div class="empty" style="padding:40px 0">この月の記録はありません</div>'; return; }
+  const days = ['日','月','火','水','木','金','土'];
+  let html = '', lastDate = '';
+  for (const t of txs) {
+    if (t.date !== lastDate) {
+      const d = new Date(t.date + 'T00:00:00');
+      html += `<div class="day-head">${d.getMonth()+1}月${d.getDate()}日（${days[d.getDay()]}）</div>`;
+      lastDate = t.date;
+    }
+    const isTr = t.type === 'transfer';
+    html += `
+      <div class="tx" onclick="editTx('${t.id}')">
+        <div class="info">
+          <div class="cat">${isTr ? '振替' : esc(t.category)}</div>
+          ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
+        </div>
+        <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}</span>
+        <div class="amt ${isTr ? 'transfer' : t.type === 'income' ? 'income' : ''}">${isTr ? '⇄ ' : t.type === 'income' ? '+' : '−'}${yen(t.amount)}</div>
+      </div>`;
+  }
+  $('history-list').innerHTML = html;
+}
+
+/* ---------- 記帳フォーム ---------- */
+/* 併用払い: 1回の買い物を複数の支払い方法に分けて記帳する */
+let splitRows = [];
+
+function defaultSplitMethodId() {
+  const p = S.paymentMethods.find(m => m.type === 'point' && m.id !== $('f-method').value);
+  return (p || S.paymentMethods.find(m => m.id !== $('f-method').value) || S.paymentMethods[0]).id;
+}
+
+function addSplitRow() {
+  if (splitRows.length >= 2) { toast('併用できるのは3つまでです'); return; }
+  splitRows.push({ methodId: defaultSplitMethodId(), amount: '' });
+  renderSplitRows();
+}
+
+function removeSplitRow(i) {
+  splitRows.splice(i, 1);
+  renderSplitRows();
+}
+
+function updateSplit(i, field, val) {
+  splitRows[i][field] = val;
+  updateSplitHint();
+}
+
+function renderSplitRows() {
+  $('split-rows').innerHTML = splitRows.map((s, i) => `
+    <div class="row2" style="margin-top:8px;align-items:center">
+      <div style="flex:1.5"><select onchange="updateSplit(${i},'methodId',this.value)">
+        ${S.paymentMethods.map(m => `<option value="${m.id}" ${m.id === s.methodId ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
+      </select></div>
+      <div><input type="number" inputmode="numeric" placeholder="この方法で払う額" value="${s.amount}" oninput="updateSplit(${i},'amount',this.value)"></div>
+      <button class="btn-mini" style="flex:0 0 auto" onclick="removeSplitRow(${i})">✕</button>
+    </div>`).join('');
+  updateSplitHint();
+}
+
+function updateSplitHint() {
+  const el = $('split-hint');
+  if (!splitRows.length) { el.textContent = ''; return; }
+  const total = Math.round(Number($('f-amount').value)) || 0;
+  const sum = splitRows.reduce((s, x) => s + (Math.round(Number(x.amount)) || 0), 0);
+  const rem = total - sum;
+  el.style.color = rem < 0 ? 'var(--expense)' : 'var(--muted)';
+  el.textContent = rem < 0
+    ? `⚠ 併用分の合計（${yen(sum)}）が金額を超えています`
+    : `${methodName($('f-method').value)}で払う分: ${yen(rem)}`;
+}
+
+function setEntryType(type) {
+  entryType = type;
+  $('seg-expense').className = type === 'expense' ? 'on-expense' : '';
+  $('seg-income').className = type === 'income' ? 'on-income' : '';
+  $('seg-transfer').className = type === 'transfer' ? 'on-transfer' : '';
+  const isTr = type === 'transfer';
+  $('f-category-wrap').style.display = isTr ? 'none' : 'block';
+  $('f-method-wrap').style.display = isTr ? 'none' : 'block';
+  $('f-transfer-wrap').style.display = isTr ? 'flex' : 'none';
+  $('split-wrap').style.display = type === 'expense' ? 'block' : 'none';
+  if (isTr) {
+    fillMethodSelect($('f-from'), $('f-from').value || debitMethodId());
+    fillMethodSelect($('f-to'), $('f-to').value);
+  } else {
+    fillCategorySelect($('f-category'), type);
+  }
+}
+
+function fillCategorySelect(sel, type, selected) {
+  sel.innerHTML = S.categories[type].map(c => `<option ${c === selected ? 'selected' : ''}>${esc(c)}</option>`).join('');
+}
+
+function fillMethodSelect(sel, selected) {
+  sel.innerHTML = S.paymentMethods.map(m =>
+    `<option value="${m.id}" ${m.id === selected ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+}
+
+function renderEntryOptions() {
+  if (entryType === 'transfer') {
+    fillMethodSelect($('f-from'), $('f-from').value);
+    fillMethodSelect($('f-to'), $('f-to').value);
+  } else {
+    fillCategorySelect($('f-category'), entryType, $('f-category').value);
+    fillMethodSelect($('f-method'), $('f-method').value);
+  }
+  if (!$('f-date').value) $('f-date').value = todayStr();
+}
+
+function resetEntryForm() {
+  editingId = null; entryRecurringId = null;
+  entryType = 'expense';
+  fillMethodSelect($('f-method'));
+  fillMethodSelect($('f-from'), debitMethodId());
+  fillMethodSelect($('f-to'), (S.paymentMethods.find(m => m.type === 'cash') || S.paymentMethods[0]).id);
+  setEntryType('expense');
+  $('f-amount').value = ''; $('f-memo').value = '';
+  $('f-date').value = todayStr();
+  splitRows = [];
+  renderSplitRows();
+  $('entry-save').textContent = '記帳する';
+  $('entry-delete').style.display = 'none';
+}
+
+function saveEntry() {
+  const amount = Math.round(Number($('f-amount').value));
+  if (!amount || amount <= 0) { toast('金額を入力してください'); return; }
+  if (!$('f-date').value) { toast('日付を入力してください'); return; }
+  const base = { type: entryType, date: $('f-date').value, memo: $('f-memo').value.trim() };
+  let parts = [];
+  if (entryType === 'transfer') {
+    if ($('f-from').value === $('f-to').value) { toast('移動元と移動先が同じです'); return; }
+    parts = [{ ...base, amount, category: '振替', methodId: $('f-from').value, toId: $('f-to').value }];
+  } else {
+    const category = $('f-category').value;
+    // 併用払い: 併用分を先に取り、残りをメインの支払い方法で払う
+    const splits = entryType === 'expense'
+      ? splitRows.map(s => ({ methodId: s.methodId, amount: Math.round(Number(s.amount)) || 0 })).filter(s => s.amount > 0)
+      : [];
+    const splitSum = splits.reduce((s, x) => s + x.amount, 0);
+    if (splitSum > amount) { toast('併用分の合計が金額を超えています'); return; }
+    const mainAmt = amount - splitSum;
+    if (mainAmt > 0 || !splits.length) parts.push({ ...base, amount: mainAmt, category, methodId: $('f-method').value });
+    for (const s of splits) parts.push({ ...base, amount: s.amount, category, methodId: s.methodId });
+    if (parts.length > 1) {
+      const sid = uid();
+      parts.forEach(p => { p.splitId = sid; });
+    }
+    parts[0].recurringId = entryRecurringId || (editingId ? (S.transactions.find(t => t.id === editingId) || {}).recurringId : null) || null;
+  }
+  parts.forEach(p => {
+    p.id = uid();
+    p.createdAt = Date.now();
+    if (!('recurringId' in p)) p.recurringId = null;
+  });
+  if (editingId) {
+    const i = S.transactions.findIndex(t => t.id === editingId);
+    parts[0].id = editingId;
+    parts[0].createdAt = S.transactions[i].createdAt;
+    S.transactions.splice(i, 1, ...parts);
+    toast('更新しました');
+  } else {
+    S.transactions.push(...parts);
+    toast('記帳しました ✓');
+  }
+  persist();
+  resetEntryForm();
+  view = { y: Number(base.date.slice(0, 4)), m: Number(base.date.slice(5, 7)) };
+  showView('home');
+}
+
+function editTx(id) {
+  const t = S.transactions.find(t => t.id === id);
+  if (!t) return;
+  editingId = id;
+  entryType = t.type;
+  splitRows = [];
+  renderSplitRows();
+  setEntryType(t.type);
+  if (t.type === 'transfer') {
+    fillMethodSelect($('f-from'), t.methodId);
+    fillMethodSelect($('f-to'), t.toId);
+  } else {
+    fillCategorySelect($('f-category'), t.type, t.category);
+    fillMethodSelect($('f-method'), t.methodId);
+  }
+  $('f-amount').value = t.amount;
+  $('f-date').value = t.date;
+  $('f-memo').value = t.memo || '';
+  $('entry-save').textContent = '更新する';
+  $('entry-delete').style.display = 'block';
+  showView('entry');
+}
+
+async function deleteEntry() {
+  if (!editingId) return;
+  if (!await appConfirm('この記録を削除しますか？')) return;
+  S.transactions = S.transactions.filter(t => t.id !== editingId);
+  persist();
+  toast('削除しました');
+  resetEntryForm();
+  showView('history');
+}
+
+function recordFromRecurring(recId, dueDate) {
+  const r = S.recurring.find(r => r.id === recId);
+  if (!r) return;
+  resetEntryForm();
+  entryRecurringId = recId;
+  const kind = r.kind === 'income' ? 'income' : 'expense';
+  setEntryType(kind);
+  fillCategorySelect($('f-category'), kind, r.category);
+  fillMethodSelect($('f-method'), r.methodId);
+  $('f-amount').value = r.amount;
+  $('f-date').value = dueDate;
+  $('f-memo').value = r.name;
+  showView('entry');
+  toast('金額を確認して「記帳する」を押してください');
+}
+
+/* ---------- 固定費 ---------- */
+function renderRecurring() {
+  const list = S.recurring.slice().sort((a, b) => a.day - b.day);
+  if (!list.length) {
+    $('rec-list').innerHTML = '<div class="empty">まだ登録がありません。<br>Netflix・Spotify・電気代・家賃などを登録すると、ホーム画面で支払い忘れをチェックできます。</div>';
+    return;
+  }
+  $('rec-list').innerHTML = list.map(r => `
+    <div class="list-item ${r.active ? '' : 'inactive'}">
+      <div class="info">
+        <div class="name">${esc(r.name)}</div>
+        <div class="sub">${r.cycle === 'monthly' ? `毎月${r.day}日` : `毎年${r.month}月${r.day}日`}・${r.kind === 'income' ? `<span style="color:var(--income);font-weight:700">+${yen(r.amount)}</span>` : yen(r.amount)}・${esc(methodName(r.methodId))}</div>
+      </div>
+      <button class="btn-mini" onclick="toggleRec('${r.id}')">${r.active ? '停止' : '再開'}</button>
+      <button class="btn-mini" onclick="openRecForm('${r.id}')">編集</button>
+      <button class="btn-mini" style="color:var(--expense)" onclick="deleteRec('${r.id}')">削除</button>
+    </div>`).join('');
+}
+
+function openRecForm(id) {
+  editingRecId = id || null;
+  const r = id ? S.recurring.find(r => r.id === id) : null;
+  const kind = r && r.kind === 'income' ? 'income' : 'expense';
+  $('rec-form').style.display = 'block';
+  $('rec-form-title').textContent = r ? '固定費・定期収入を編集' : '固定費・定期収入を追加';
+  $('r-kind').value = kind;
+  $('r-name').value = r ? r.name : '';
+  $('r-amount').value = r ? r.amount : '';
+  $('r-cycle').value = r ? r.cycle : 'monthly';
+  $('r-month').innerHTML = Array.from({length:12}, (_, i) => `<option value="${i+1}">${i+1}月</option>`).join('');
+  $('r-month').value = r && r.month ? r.month : (new Date().getMonth() + 1);
+  $('r-day').innerHTML = Array.from({length:31}, (_, i) => `<option value="${i+1}">${i+1}日</option>`).join('');
+  $('r-day').value = r ? r.day : 27;
+  fillCategorySelect($('r-category'), kind, r ? r.category : 'サブスク');
+  fillMethodSelect($('r-method'), r ? r.methodId : (S.paymentMethods.find(m => m.type === 'credit') || S.paymentMethods[0]).id);
+  toggleRecMonth();
+  $('rec-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function onRecKindChange() {
+  const kind = $('r-kind').value;
+  fillCategorySelect($('r-category'), kind, kind === 'income' ? 'バイト代' : 'サブスク');
+  fillMethodSelect($('r-method'), kind === 'income'
+    ? (debitMethodId() || S.paymentMethods[0].id)
+    : (S.paymentMethods.find(m => m.type === 'credit') || S.paymentMethods[0]).id);
+}
+
+function toggleRecMonth() {
+  $('r-month-wrap').style.display = $('r-cycle').value === 'yearly' ? 'block' : 'none';
+}
+
+function closeRecForm() { $('rec-form').style.display = 'none'; editingRecId = null; }
+
+function saveRec() {
+  const name = $('r-name').value.trim();
+  const amount = Math.round(Number($('r-amount').value));
+  if (!name) { toast('名前を入力してください'); return; }
+  if (!amount || amount <= 0) { toast('金額を入力してください'); return; }
+  const rec = {
+    id: editingRecId || uid(),
+    name, amount,
+    kind: $('r-kind').value,
+    cycle: $('r-cycle').value,
+    month: Number($('r-month').value),
+    day: Number($('r-day').value),
+    category: $('r-category').value,
+    methodId: $('r-method').value,
+    active: editingRecId ? S.recurring.find(r => r.id === editingRecId).active : true,
+  };
+  if (editingRecId) {
+    S.recurring[S.recurring.findIndex(r => r.id === editingRecId)] = rec;
+  } else {
+    S.recurring.push(rec);
+  }
+  persist();
+  toast('保存しました ✓');
+  closeRecForm();
+  render();
+}
+
+function toggleRec(id) {
+  const r = S.recurring.find(r => r.id === id);
+  r.active = !r.active;
+  persist(); render();
+}
+
+async function deleteRec(id) {
+  const r = S.recurring.find(r => r.id === id);
+  if (!await appConfirm(`「${r.name}」を削除しますか？（過去の記帳は残ります）`)) return;
+  S.recurring = S.recurring.filter(r => r.id !== id);
+  persist(); render();
+}
+
+/* ---------- 設定 ---------- */
+function methodInUse(id) {
+  return S.transactions.some(t => t.methodId === id || t.toId === id) || S.recurring.some(r => r.methodId === id);
+}
+
+let editingBillingId = null;
+
+function billingLabel(b) {
+  const debit = b.debitMethodId || debitMethodId();
+  return `${dayLabel(b.closingDay)}締め・${b.payMonthOffset === 2 ? '翌々月' : '翌月'}${dayLabel(b.payDay)}払い${debit ? '／' + methodName(debit) + 'から' : ''}`;
+}
+
+function dayOptions(selected) {
+  return Array.from({ length: 30 }, (_, i) => `<option value="${i + 1}" ${i + 1 === selected ? 'selected' : ''}>${i + 1}日</option>`).join('')
+    + `<option value="31" ${selected >= 31 ? 'selected' : ''}>月末</option>`;
+}
+
+function billingEditor(m) {
+  const b = m.billing || { closingDay: 15, payMonthOffset: 1, payDay: 27 };
+  const debitSel = b.debitMethodId || debitMethodId();
+  const debitOptions = trackedMethods().map(t =>
+    `<option value="${t.id}" ${t.id === debitSel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  return `
+    <div style="padding:4px 0 10px;border-bottom:1px solid var(--line)">
+      <div class="row2">
+        <div><label>締め日</label><select id="b-closing">${dayOptions(b.closingDay)}</select></div>
+        <div><label>支払い月</label>
+          <select id="b-offset">
+            <option value="1" ${b.payMonthOffset !== 2 ? 'selected' : ''}>翌月</option>
+            <option value="2" ${b.payMonthOffset === 2 ? 'selected' : ''}>翌々月</option>
+          </select>
+        </div>
+        <div><label>支払日</label><select id="b-payday">${dayOptions(b.payDay)}</select></div>
+      </div>
+      <label>引き落とし口座（支払日にここから残高が引かれます）</label>
+      <select id="b-debit">${debitOptions || '<option value="">（現金・銀行の支払い方法がありません）</option>'}</select>
+      <div class="row2" style="margin-top:10px">
+        <div><button class="btn-sub" style="width:100%;padding:10px 0" onclick="saveBilling('${m.id}')">保存</button></div>
+        <div><button class="btn-mini" style="width:100%;padding:10px 0" onclick="editingBillingId=null;render()">キャンセル</button></div>
+      </div>
+    </div>`;
+}
+
+function openBilling(id) { editingBillingId = id; render(); }
+
+function saveBilling(id) {
+  const m = S.paymentMethods.find(m => m.id === id);
+  m.billing = {
+    closingDay: Number($('b-closing').value),
+    payMonthOffset: Number($('b-offset').value),
+    payDay: Number($('b-payday').value),
+    debitMethodId: $('b-debit').value || null,
+  };
+  editingBillingId = null;
+  persist(); render();
+  toast('設定しました ✓ ホームで引き落とし額を確認できます');
+}
+
+function renderSettings() {
+  $('method-list').innerHTML = S.paymentMethods.map(m => `
+    <div class="list-item">
+      <div class="info">
+        <div class="name">${esc(m.name)}</div>
+        ${m.type === 'credit' ? `<div class="sub">${m.billing ? billingLabel(m.billing) : '締め日・支払日が未設定'}</div>` : ''}
+      </div>
+      <span class="type-chip">${TYPE_LABEL[m.type] || m.type}</span>
+      ${m.type === 'credit' ? `<button class="btn-mini" onclick="openBilling('${m.id}')">締日</button>` : ''}
+      <button class="btn-mini" onclick="renameMethod('${m.id}')">名前変更</button>
+      <button class="btn-mini" style="color:var(--expense)" onclick="deleteMethod('${m.id}')">削除</button>
+    </div>
+    ${editingBillingId === m.id ? billingEditor(m) : ''}`).join('');
+
+  $('balance-settings').innerHTML = trackedMethods().map(m => {
+    const b = balanceOf(m.id);
+    return `
+    <div class="list-item">
+      <div class="info">
+        <div class="name">${esc(m.name)}</div>
+        <div class="sub">${b == null ? '未設定' : `現在 ${b < 0 ? '−' : ''}${yen(Math.abs(b))}（${S.balances[m.id].date.slice(5).replace('-', '/')} に設定）`}</div>
+      </div>
+      <button class="btn-mini" onclick="setBalance('${m.id}')">残高を入力</button>
+    </div>`;
+  }).join('');
+
+  for (const type of ['expense', 'income']) {
+    $(`cat-${type}-list`).innerHTML = S.categories[type].map(c => `
+      <div class="list-item">
+        <div class="info"><div class="name">${esc(c)}</div></div>
+        <button class="btn-mini" style="color:var(--expense)" onclick="deleteCategory('${type}', '${esc(c)}')">削除</button>
+      </div>`).join('');
+  }
+}
+
+function addMethod() {
+  const name = $('new-method-name').value.trim();
+  if (!name) { toast('名前を入力してください'); return; }
+  if (S.paymentMethods.some(m => m.name === name)) { toast('同じ名前があります'); return; }
+  const type = $('new-method-type').value;
+  S.paymentMethods.push({ id: uid(), name, type });
+  $('new-method-name').value = '';
+  persist(); render();
+  toast(type === 'credit' ? '追加しました ✓「締日」から締め日も設定しましょう' : '追加しました ✓');
+}
+
+async function renameMethod(id) {
+  const m = S.paymentMethods.find(m => m.id === id);
+  const name = await appPrompt('新しい名前を入力', m.name);
+  if (!name || !name.trim()) return;
+  m.name = name.trim();
+  persist(); render();
+}
+
+async function deleteMethod(id) {
+  if (methodInUse(id)) { toast('記帳や固定費で使用中のため削除できません'); return; }
+  const m = S.paymentMethods.find(m => m.id === id);
+  if (!await appConfirm(`「${m.name}」を削除しますか？`)) return;
+  S.paymentMethods = S.paymentMethods.filter(m => m.id !== id);
+  delete S.balances[id];
+  persist(); render();
+}
+
+function addCategory(type) {
+  const input = $(`new-cat-${type}`);
+  const name = input.value.trim();
+  if (!name) { toast('カテゴリ名を入力してください'); return; }
+  if (S.categories[type].includes(name)) { toast('同じカテゴリがあります'); return; }
+  S.categories[type].push(name);
+  input.value = '';
+  persist(); render();
+  toast('追加しました ✓');
+}
+
+async function deleteCategory(type, name) {
+  const used = S.transactions.some(t => t.type === type && t.category === name)
+    || (type === 'expense' && S.recurring.some(r => r.category === name));
+  if (used) { toast('使用中のカテゴリは削除できません'); return; }
+  if (!await appConfirm(`カテゴリ「${name}」を削除しますか？`)) return;
+  S.categories[type] = S.categories[type].filter(c => c !== name);
+  persist(); render();
+}
+
+/* テキスト方式のバックアップ（ダウンロードが無効化された環境でも動く） */
+async function backupToClipboard() {
+  const text = JSON.stringify(S);
+  let copied = false;
+  try { await navigator.clipboard.writeText(text); copied = true; } catch {}
+  const p = showModal(
+    copied
+      ? 'コピーしました ✓ メモ帳などに貼り付けて保存してください。（コピーできていない場合は下のテキストを長押し→全選択→コピー）'
+      : '下のテキストを長押し→全選択→コピーして、メモ帳などに貼り付けて保存してください。',
+    false, text, true);
+  $('modal-textarea').select();
+  await p;
+}
+
+async function restoreFromText() {
+  const text = await showModal('バックアップのテキストをここに貼り付けてください', false, '', true);
+  if (!text || !text.trim()) return;
+  try {
+    const data = JSON.parse(text.trim());
+    if (!data || !Array.isArray(data.transactions) || !Array.isArray(data.paymentMethods)) throw new Error('bad');
+    if (!await appConfirm(`この内容でデータを置き換えますか？（記録 ${data.transactions.length} 件）`)) return;
+    data.balances = data.balances || {};
+    S = data;
+    persist();
+    resetEntryForm();
+    render();
+    showView('home');
+    toast('復元しました ✓');
+  } catch {
+    toast('⚠ 読み込めませんでした。コピーしたテキスト全体を貼り付けたか確認してください');
+  }
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `kakeibo-backup-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importData(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || !Array.isArray(data.transactions) || !Array.isArray(data.paymentMethods)) throw new Error('bad');
+      if (!await appConfirm(`「${file.name}」の内容でこの端末のデータを置き換えますか？（記録 ${data.transactions.length} 件）`)) { input.value = ''; return; }
+      data.balances = data.balances || {};
+      S = data;
+      persist();
+      resetEntryForm();
+      render();
+      showView('home');
+      toast('復元しました ✓');
+    } catch {
+      toast('⚠ 読み込めませんでした。バックアップのJSONか確認してください');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- 起動 ---------- */
+const DEFAULT_DATA = {
+  paymentMethods: [
+    { id: 'm_cash',   name: '現金', type: 'cash' },
+    { id: 'm_credit', name: 'クレジットカード', type: 'credit' },
+    { id: 'm_paypay', name: 'PayPay', type: 'qr' },
+    { id: 'm_ic',     name: 'Suica・PASMO', type: 'ic' },
+    { id: 'm_point',  name: 'ポイント', type: 'point' },
+    { id: 'm_bank',   name: '銀行口座（引き落とし・振込）', type: 'bank' },
+  ],
+  categories: {
+    expense: ['食費', '外食', '日用品', '交通費', '交際費', '趣味・娯楽',
+              '衣服・美容', '書籍・学習', '光熱費', '通信費', 'サブスク',
+              '医療・健康', 'その他'],
+    income: ['バイト代', '仕送り', 'お小遣い', '臨時収入', 'その他'],
+  },
+  transactions: [],
+  recurring: [],
+  balances: {},
+};
+
+function init() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    S = raw ? JSON.parse(raw) : structuredClone(DEFAULT_DATA);
+  } catch {
+    S = structuredClone(DEFAULT_DATA);
+  }
+  S.balances = S.balances || {};
+  resetEntryForm();
+  showView('home');
+}
+init();
+</script>
+</body>
+</html>
