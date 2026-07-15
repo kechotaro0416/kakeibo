@@ -55,6 +55,19 @@
     box-shadow: 0 1px 3px rgba(0,0,0,.06);
   }
   .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .hero-card { background: linear-gradient(135deg, #0f766e, #115e59); color: #fff; }
+  .hero-card h2, .hero-card .hero-note { color: rgba(255,255,255,.78); }
+  .hero-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hero-note { font-size: 12px; margin-top: 4px; }
+  .hero-meta { display:flex; gap:8px; margin-top:14px; }
+  .hero-meta > div { flex:1; background:rgba(255,255,255,.13); border-radius:10px; padding:8px 10px; }
+  .hero-meta .label { color:rgba(255,255,255,.72); font-size:11px; }
+  .hero-meta .value { font-size:15px; font-weight:700; margin-top:2px; }
+  .quick-actions { display:flex; gap:8px; margin-bottom:14px; }
+  .quick-actions button { flex:1; border:0; border-radius:11px; padding:11px 8px; font-weight:700; cursor:pointer; background:#fff; color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .quick-actions button.primary { background:var(--accent); color:#fff; }
+  .section-toggle { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+  .section-toggle button { border:0; background:none; color:var(--accent); font-weight:700; cursor:pointer; }
 
   /* ホーム: 収支サマリー */
   .summary { display: flex; text-align: center; }
@@ -180,6 +193,13 @@
   .tx .amt { font-weight: 700; white-space: nowrap; }
   .tx .amt.income { color: var(--income); }
   .tx .amt.transfer { color: var(--muted); }
+  .tx-actions { display:flex; gap:4px; margin-left:4px; }
+  .tx-actions button { border:0; background:none; color:var(--muted); padding:7px; cursor:pointer; border-radius:7px; }
+  .tx-actions button:hover { background:var(--accent-soft); color:var(--accent); }
+  .history-tools { display:flex; gap:8px; margin-bottom:10px; }
+  .history-tools input, .history-tools select { min-width:0; padding:9px 10px; }
+  .history-tools input { flex:2; }
+  .history-tools select { flex:1; }
   .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 0; }
 
   /* 固定費・設定リスト */
@@ -206,6 +226,7 @@
   }
   nav button .ic { display: block; font-size: 21px; margin-bottom: 1px; }
   nav button.active { color: var(--accent); }
+  .fab { position:fixed; right:18px; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:11; width:54px; height:54px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:29px; line-height:1; box-shadow:0 5px 16px rgba(15,118,110,.35); cursor:pointer; }
 
   #modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50;
@@ -229,6 +250,13 @@
     transition: all .25s; z-index: 100; white-space: nowrap;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (max-width: 420px) {
+    .row2 { flex-direction:column; gap:0; }
+    .history-tools { gap:6px; }
+    .hero-value { font-size:26px; }
+    .tx .method { max-width:92px; overflow:hidden; text-overflow:ellipsis; }
+    .tx-actions button { padding:6px 3px; font-size:11px; }
+  }
 </style>
 </head>
 <body>
@@ -236,15 +264,28 @@
 <header>
   <h1 id="header-title">家計簿</h1>
   <div class="month-nav" id="month-nav">
-    <button onclick="moveMonth(-1)">‹</button>
+    <button aria-label="前月" onclick="moveMonth(-1)">‹</button>
     <span id="month-label"></span>
-    <button onclick="moveMonth(1)">›</button>
+    <button aria-label="翌月" onclick="moveMonth(1)">›</button>
   </div>
 </header>
 
 <main>
   <!-- ホーム -->
   <div class="view" id="view-home">
+    <div class="card hero-card">
+      <h2>自由に使えるお金</h2>
+      <div class="hero-value" id="free-money-value">—</div>
+      <div class="hero-note" id="free-money-note">残高を設定すると、次の区切り日までの目安を表示します</div>
+      <div class="hero-meta">
+        <div><div class="label">次の予定</div><div class="value" id="next-plan-value">—</div></div>
+        <div><div class="label">今月の支出</div><div class="value" id="hero-expense-value">¥0</div></div>
+      </div>
+    </div>
+    <div class="quick-actions">
+      <button class="primary" onclick="showView('entry'); focusAmount()">＋ 支出を記録</button>
+      <button onclick="showView('history')">履歴を探す</button>
+    </div>
     <div class="card">
       <h2>残高</h2>
       <div id="balance-list"></div>
@@ -272,15 +313,15 @@
       <div id="credit-bills"></div>
     </div>
     <div class="card">
-      <h2>カテゴリ別支出</h2>
+      <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
       <div id="break-category"></div>
     </div>
     <div class="card">
-      <h2>支払い方法別支出</h2>
+      <div class="section-toggle"><h2>支払い方法別支出</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
       <div id="break-method"></div>
     </div>
     <div class="card">
-      <h2>収入の内訳</h2>
+      <div class="section-toggle"><h2>収入の内訳</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
       <div id="break-income"></div>
     </div>
   </div>
@@ -321,6 +362,10 @@
 
   <!-- 履歴 -->
   <div class="view" id="view-history">
+    <div class="history-tools">
+      <input id="history-search" type="search" placeholder="メモ・カテゴリを検索" oninput="renderHistory()">
+      <select id="history-type" onchange="renderHistory()"><option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option><option value="transfer">振替</option></select>
+    </div>
     <div id="history-list"></div>
   </div>
 
@@ -331,6 +376,7 @@
         <h2 style="margin:0">毎月・毎年の固定費と定期収入</h2>
         <button class="btn-sub" onclick="openRecForm()">＋ 追加</button>
       </div>
+      <div id="rec-summary" class="alert-ok" style="margin:8px 0 4px"></div>
       <div id="rec-list"></div>
     </div>
     <div class="card" id="rec-form" style="display:none">
@@ -450,6 +496,7 @@
   <button data-view="recurring" onclick="showView('recurring')"><span class="ic">🔁</span>固定費</button>
   <button data-view="settings" onclick="showView('settings')"><span class="ic">⚙️</span>設定</button>
 </nav>
+<button class="fab" aria-label="支出を記録" onclick="showView('entry'); focusAmount()">＋</button>
 
 <div id="modal-bg" style="display:none">
   <div class="modal">
@@ -545,6 +592,7 @@ function showView(name) {
   $('header-title').textContent = titles[name];
   render();
   window.scrollTo(0, 0);
+  if (name === 'entry' && !editingId) focusAmount();
 }
 
 function moveMonth(d) {
@@ -577,6 +625,7 @@ function renderHome() {
   const bal = income - expense;
   $('sum-balance').textContent = (bal < 0 ? '−' : '') + yen(Math.abs(bal));
   $('sum-balance').className = 'val ' + (bal >= 0 ? 'income' : 'expense');
+  renderHero(expense);
 
   renderBalances();
   renderUpcoming();
@@ -585,6 +634,31 @@ function renderHome() {
   renderDonut('break-category', groupSum(txs, t => t.category, 'expense'), S.categories.expense);
   renderDonut('break-method', groupSum(txs, t => methodName(t.methodId), 'expense'), S.paymentMethods.map(m => m.name));
   renderDonut('break-income', groupSum(txs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
+}
+
+function renderHero(expense) {
+  const rows = trackedMethods().filter(m => S.balances[m.id]);
+  if (!rows.length) {
+    $('free-money-value').textContent = '—';
+    $('free-money-note').textContent = '設定から残高を入力すると、次の区切り日までの目安を表示します';
+  } else {
+    const ids = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
+    const free = freeMoneyFrom(todayStr(), ids);
+    $('free-money-value').textContent = `${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}`;
+    $('free-money-note').textContent = `${fmtMD(free.horizon)}まで支払いを終えた後も残る見込み`;
+  }
+  $('hero-expense-value').textContent = yen(expense);
+  const plans = upcomingPayments(90).filter(i => i.date >= todayStr()).sort((a,b) => a.date.localeCompare(b.date));
+  $('next-plan-value').textContent = plans.length ? `${fmtMD(plans[0].date)} ${yen(plans[0].amount)}` : '予定なし';
+}
+
+function toggleAnalysis(btn) {
+  const card = btn.closest('.card');
+  const body = card.querySelector('.donut-wrap');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? '折りたたむ' : '表示する';
 }
 
 function dueItemsForViewMonth() {
@@ -1084,8 +1158,14 @@ function renderDonut(elId, entriesIn, masterList, emptyMsg) {
 }
 
 function renderHistory() {
-  const txs = txInViewMonth().slice().sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
-  if (!txs.length) { $('history-list').innerHTML = '<div class="empty" style="padding:40px 0">この月の記録はありません</div>'; return; }
+  const q = ($('history-search')?.value || '').trim().toLowerCase();
+  const type = $('history-type')?.value || 'all';
+  const txs = txInViewMonth().filter(t => {
+    if (type !== 'all' && t.type !== type) return false;
+    if (!q) return true;
+    return [t.memo, t.category, methodName(t.methodId), methodName(t.toId)].join(' ').toLowerCase().includes(q);
+  }).slice().sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+  if (!txs.length) { $('history-list').innerHTML = `<div class="empty" style="padding:40px 0">${q || type !== 'all' ? '条件に一致する記録はありません' : 'この月の記録はありません'}</div>`; return; }
   const days = ['日','月','火','水','木','金','土'];
   let html = '', lastDate = '';
   for (const t of txs) {
@@ -1103,9 +1183,26 @@ function renderHistory() {
         </div>
         <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}</span>
         <div class="amt ${isTr ? 'transfer' : t.type === 'income' ? 'income' : ''}">${isTr ? '⇄ ' : t.type === 'income' ? '+' : '−'}${yen(t.amount)}</div>
+        <div class="tx-actions"><button aria-label="${t.memo || t.category}を複製" onclick="event.stopPropagation(); duplicateTx('${t.id}')">複製</button></div>
       </div>`;
   }
   $('history-list').innerHTML = html;
+}
+
+function duplicateTx(id) {
+  const t = S.transactions.find(x => x.id === id);
+  if (!t) return;
+  resetEntryForm();
+  entryType = t.type;
+  setEntryType(t.type);
+  $('f-amount').value = t.amount;
+  $('f-date').value = todayStr();
+  $('f-memo').value = t.memo || '';
+  if (t.type === 'transfer') { $('f-from').value = t.methodId; $('f-to').value = t.toId; }
+  else { $('f-category').value = t.category; $('f-method').value = t.methodId; }
+  showView('entry');
+  focusAmount();
+  toast('内容を複製しました。金額や日付を確認してください');
 }
 
 /* ---------- 記帳フォーム ---------- */
@@ -1210,6 +1307,10 @@ function resetEntryForm() {
   $('entry-delete').style.display = 'none';
 }
 
+function focusAmount() {
+  setTimeout(() => { const el = $('f-amount'); if (el) el.focus(); }, 0);
+}
+
 function saveEntry() {
   const amount = Math.round(Number($('f-amount').value));
   if (!amount || amount <= 0) { toast('金額を入力してください'); return; }
@@ -1243,9 +1344,12 @@ function saveEntry() {
   });
   if (editingId) {
     const i = S.transactions.findIndex(t => t.id === editingId);
+    const old = S.transactions[i];
+    if (old && old.splitId) S.transactions = S.transactions.filter(t => t.splitId !== old.splitId);
+    else S.transactions.splice(i, 1);
     parts[0].id = editingId;
-    parts[0].createdAt = S.transactions[i].createdAt;
-    S.transactions.splice(i, 1, ...parts);
+    parts[0].createdAt = old.createdAt;
+    S.transactions.push(...parts);
     toast('更新しました');
   } else {
     S.transactions.push(...parts);
@@ -1261,20 +1365,22 @@ function editTx(id) {
   const t = S.transactions.find(t => t.id === id);
   if (!t) return;
   editingId = id;
-  entryType = t.type;
-  splitRows = [];
+  const group = t.splitId ? S.transactions.filter(x => x.splitId === t.splitId) : [t];
+  const primary = group[0];
+  entryType = primary.type;
+  splitRows = group.slice(1).map(x => ({ methodId:x.methodId, amount:String(x.amount) }));
   renderSplitRows();
-  setEntryType(t.type);
-  if (t.type === 'transfer') {
-    fillMethodSelect($('f-from'), t.methodId);
-    fillMethodSelect($('f-to'), t.toId);
+  setEntryType(primary.type);
+  if (primary.type === 'transfer') {
+    fillMethodSelect($('f-from'), primary.methodId);
+    fillMethodSelect($('f-to'), primary.toId);
   } else {
-    fillCategorySelect($('f-category'), t.type, t.category);
-    fillMethodSelect($('f-method'), t.methodId);
+    fillCategorySelect($('f-category'), primary.type, primary.category);
+    fillMethodSelect($('f-method'), primary.methodId);
   }
-  $('f-amount').value = t.amount;
-  $('f-date').value = t.date;
-  $('f-memo').value = t.memo || '';
+  $('f-amount').value = group.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+  $('f-date').value = primary.date;
+  $('f-memo').value = primary.memo || '';
   $('entry-save').textContent = '更新する';
   $('entry-delete').style.display = 'block';
   showView('entry');
@@ -1283,7 +1389,10 @@ function editTx(id) {
 async function deleteEntry() {
   if (!editingId) return;
   if (!await appConfirm('この記録を削除しますか？')) return;
-  S.transactions = S.transactions.filter(t => t.id !== editingId);
+  const target = S.transactions.find(t => t.id === editingId);
+  S.transactions = target?.splitId
+    ? S.transactions.filter(t => t.splitId !== target.splitId)
+    : S.transactions.filter(t => t.id !== editingId);
   persist();
   toast('削除しました');
   resetEntryForm();
@@ -1309,6 +1418,10 @@ function recordFromRecurring(recId, dueDate, amount) {
 /* ---------- 固定費 ---------- */
 function renderRecurring() {
   const list = S.recurring.slice().sort((a, b) => a.day - b.day);
+  const due = dueItemsForViewMonth();
+  const pending = due.filter(x => x.status !== 'done').length;
+  const monthlyExpense = S.recurring.filter(r => r.active && r.kind === 'expense').reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  $('rec-summary').textContent = list.length ? `今月の未処理 ${pending}件 ・ 毎月の固定費目安 ${yen(monthlyExpense)}` : '';
   if (!list.length) {
     $('rec-list').innerHTML = '<div class="empty">まだ登録がありません。<br>Netflix・Spotify・電気代・家賃などを登録すると、ホーム画面で支払い忘れをチェックできます。</div>';
     return;
