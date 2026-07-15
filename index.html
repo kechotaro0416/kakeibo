@@ -111,6 +111,10 @@
   .free-row .free-note { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 1px; }
   .free-row .fval { font-weight: 800; font-size: 18px; color: var(--accent); font-variant-numeric: tabular-nums; }
   .free-row .fval.minus { color: var(--expense); }
+  .free-row.free-sub { background: none; padding: 7px 12px; margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0; }
+  .free-row.free-sub .fname { font-size: 13px; color: var(--text); }
+  .free-row.free-sub .fval { font-size: 15px; color: var(--text); }
+  .free-row.free-sub .fval.minus { color: var(--expense); }
   .due-item .after { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; }
   .due-item .after.minus { color: var(--expense); font-weight: 700; }
 
@@ -254,7 +258,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>今後の入出金予定（45日以内）</h2>
+      <h2 id="upcoming-title">今後の入出金予定</h2>
       <div id="upcoming-alerts"></div>
       <div id="upcoming-list"></div>
     </div>
@@ -705,6 +709,39 @@ function freeMoneyHorizon(fromStr) {
   const after = [...new Set(dates)].sort().filter(d => d > fromStr);
   return after[1] || after[0] || addDaysStr(fromStr, 45);
 }
+// fromStr より後の区切り日を count 個返す（次の区切り日から順に）
+function settlementCheckpoints(fromStr, count) {
+  const days = settlementDays();
+  let y = Number(fromStr.slice(0, 4)), m = Number(fromStr.slice(5, 7));
+  const dates = [];
+  for (let i = 0; i < 5; i++) {
+    for (const d of days) dates.push(clampDate(y, m, d));
+    [y, m] = shiftYM(y, m, 1);
+  }
+  return [...new Set(dates)].sort().filter(d => d > fromStr).slice(0, count);
+}
+// startStr を起点にした「自由に使えるお金」＝ startStr 時点の残高から次の次の区切り日までの底値
+function freeMoneyFrom(startStr, coreIds) {
+  const horizon = freeMoneyHorizon(startStr);
+  let run = [...coreIds].reduce((s, id) => s + balanceOf(id), 0);   // 今日の現金＋銀行合計
+  let free = null, minAt = null;
+  for (const it of upcomingPayments(90)) {
+    if (it.date > horizon) break;
+    let delta = 0;
+    if (it.toId) {
+      if (coreIds.has(it.methodId)) delta -= it.amount;
+      if (coreIds.has(it.toId)) delta += it.amount;
+    } else if (coreIds.has(it.methodId)) {
+      delta = it.flow === 'in' ? it.amount : -it.amount;
+    }
+    if (it.date <= startStr) { run += delta; continue; }  // 起点まではただ残高を進める（底値の対象外）
+    if (free === null) free = run;                        // 起点時点の残高を最初の候補に
+    run += delta;
+    if (run < free) { free = run; minAt = it; }
+  }
+  if (free === null) free = run;                          // 期間内に入出金がなければ起点残高そのまま
+  return { free, minAt, horizon, start: startStr };
+}
 
 // (py, pm)月に引き落とされる1回分の請求を計算
 function billFor(method, py, pm) {
@@ -840,32 +877,21 @@ function renderBalances() {
   if (rows.length > 1) {
     html += `<div class="bal-row total"><span class="bname">合計</span><span class="bval ${total < 0 ? 'minus' : ''}">${total < 0 ? '−' : ''}${yen(Math.abs(total))}</span></div>`;
   }
-  // 自由に使えるお金（底値方式・区切り日まで）:
-  // 今日〜「次の次の区切り日」の入出金を日付順にたどり、現金＋銀行の合計が最も低くなる瞬間（底値）を出す。
-  // 給料は振込日になるまで足さないので、まだ手元にないお金が使える扱いになることはない。
+  // 自由に使えるお金（底値方式）: 今 と、次にくる2つの区切り日（例 27日・翌10日）を起点にした3段を表示。
+  // 各段は「その起点の残高から、次の次の区切り日までで一番低くなる残高」＝そこまで使ってもどの支払いも滞らない額。
   const coreIds = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
-  const horizon = freeMoneyHorizon(todayStr());
-  let run = [...coreIds].reduce((s, id) => s + balanceOf(id), 0);
-  let free = run, minAt = null;
-  for (const it of upcomingPayments(60)) {
-    if (it.date > horizon) break;               // 区切り日を過ぎたら打ち切り（items は日付順）
-    let delta = 0;
-    if (it.toId) {
-      if (coreIds.has(it.methodId)) delta -= it.amount;
-      if (coreIds.has(it.toId)) delta += it.amount;
-    } else if (coreIds.has(it.methodId)) {
-      delta = it.flow === 'in' ? it.amount : -it.amount;
-    }
-    if (!delta) continue;
-    run += delta;
-    if (run < free) { free = run; minAt = it; }
-  }
   if (coreIds.size) {
-    html += `
-    <div class="free-row">
-      <span class="fname">自由に使えるお金<span class="free-note">${fmtMD(horizon)}まで${minAt ? `。一番きついのは ${fmtMD(minAt.date)}「${esc(minAt.name)}」の後` : 'の入出金を反映した額'}</span></span>
-      <span class="fval ${free < 0 ? 'minus' : ''}">${free < 0 ? '−' : ''}${yen(Math.abs(free))}</span>
-    </div>`;
+    const starts = [todayStr(), ...settlementCheckpoints(todayStr(), 2)];
+    const labels = ['今使えるお金', `${fmtMD(starts[1])}以降に使えるお金`, `${fmtMD(starts[2])}以降に使えるお金`];
+    starts.forEach((start, i) => {
+      const r = freeMoneyFrom(start, coreIds);
+      const primary = i === 0;
+      html += `
+      <div class="free-row ${primary ? '' : 'free-sub'}">
+        <span class="fname">${labels[i]}<span class="free-note">${fmtMD(r.horizon)}まで${r.minAt ? `。一番きついのは ${fmtMD(r.minAt.date)}「${esc(r.minAt.name)}」の後` : ''}</span></span>
+        <span class="fval ${r.free < 0 ? 'minus' : ''}">${r.free < 0 ? '−' : ''}${yen(Math.abs(r.free))}</span>
+      </div>`;
+    });
   }
   $('balance-list').innerHTML = html;
 }
@@ -887,7 +913,9 @@ async function editOccurrence(recId, ym, label) {
 }
 
 function renderUpcoming() {
-  const items = upcomingPayments(45);
+  const horizon = freeMoneyHorizon(todayStr());          // 直近の区切り日（次の次＝例 8/10）まで
+  const items = upcomingPayments(90).filter(i => i.date <= horizon);
+  $('upcoming-title').textContent = `今後の入出金予定（${fmtMD(horizon)}まで）`;
   const tracked = trackedMethods().filter(m => S.balances[m.id]);
   let alerts = '';
   if (!tracked.length) {
@@ -899,13 +927,13 @@ function renderUpcoming() {
       if (sf.lack) {
         alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
       } else {
-        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は今後45日の支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
+        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は ${fmtMD(horizon)} までの支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
       }
     }
   }
   $('upcoming-alerts').innerHTML = alerts;
   if (!items.length) {
-    $('upcoming-list').innerHTML = '<div class="empty">45日以内の入出金予定はありません</div>';
+    $('upcoming-list').innerHTML = `<div class="empty">${fmtMD(horizon)}までの入出金予定はありません</div>`;
     return;
   }
   // 各支払い後の残高をシミュレーション表示
