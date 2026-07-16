@@ -987,8 +987,9 @@ async function editOccurrence(recId, ym, label) {
 }
 
 function renderUpcoming() {
-  const horizon = freeMoneyHorizon(todayStr());          // 直近の区切り日（次の次＝例 8/10）まで
-  const items = upcomingPayments(90).filter(i => i.date <= horizon);
+  // 予定一覧は「自由に使えるお金」の計算期間より1か月先まで見通せるようにする
+  const horizon = addDaysStr(freeMoneyHorizon(todayStr()), 30);
+  const items = upcomingPayments(120).filter(i => i.date <= horizon);
   $('upcoming-title').textContent = `今後の入出金予定（${fmtMD(horizon)}まで）`;
   const tracked = trackedMethods().filter(m => S.balances[m.id]);
   let alerts = '';
