@@ -89,6 +89,11 @@
   .student-tool { display:flex; align-items:center; gap:9px; border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:11px; text-align:left; cursor:pointer; font-weight:750; }
   .student-tool .tool-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:10px; background:var(--accent-soft); color:var(--accent); font-size:16px; }
   .student-result { margin-top:12px; border-radius:12px; padding:12px; background:var(--accent-soft); color:var(--accent); font-weight:800; text-align:center; }
+  .wage-note { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.55; }
+  .wage-helper { margin-top:12px; padding:0 12px 12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .wage-helper summary { padding:12px 0; color:var(--accent); font-size:13px; font-weight:750; cursor:pointer; }
+  .wage-helper .btn-sub { width:100%; margin-top:12px; }
+  .wage-time-label { margin-top:2px; font-size:11px; }
   .goal-bar { height:9px; border-radius:999px; background:var(--line); overflow:hidden; margin-top:7px; }
   .goal-bar span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),#9b6cff); }
   .starter-guide { border: 1px solid #dedbff; background: #fbfaff; }
@@ -486,16 +491,34 @@
     <div class="card" id="student-wage-card">
       <h2>バイト代の見込み</h2>
       <div class="row2">
-        <div><label>時給</label><input type="number" inputmode="numeric" id="student-hourly" placeholder="例: 1200" oninput="calculateStudentWage()"></div>
-        <div><label>勤務時間</label><input type="number" inputmode="decimal" step="0.25" id="student-hours" placeholder="例: 48" oninput="calculateStudentWage()"></div>
+        <div><label for="student-hourly">通常時給（深夜割増前）</label><input type="number" inputmode="numeric" min="0" max="1000000" id="student-hourly" placeholder="例: 1200" oninput="calculateStudentWage()"></div>
+        <div><label for="student-hours">勤務時間（合計）</label><input type="number" inputmode="decimal" min="0" max="744" step="0.01" id="student-hours" placeholder="例: 48" oninput="calculateStudentWage()"></div>
       </div>
       <div class="row2">
-        <div><label>交通費など</label><input type="number" inputmode="numeric" id="student-transport" placeholder="0" oninput="calculateStudentWage()"></div>
-        <div><label>振込予定日</label><input type="date" id="student-paydate"></div>
+        <div><label for="student-night-hours">うち深夜勤務時間</label><input type="number" inputmode="decimal" min="0" max="744" step="0.01" id="student-night-hours" placeholder="例: 8" oninput="calculateStudentWage()"></div>
+        <div><label for="student-night-rate">深夜割増率（25％以上）</label><input type="number" inputmode="decimal" min="25" max="1000" step="1" id="student-night-rate" value="25" oninput="calculateStudentWage()"></div>
       </div>
-      <div class="student-result" id="student-wage-result">時給と勤務時間を入力してください</div>
+      <p class="wage-note">時間は小数で入力（1時間30分 = 1.5）。合計時間には深夜分も含め、そのうち深夜に働いた時間だけを別に入力します。</p>
+      <details class="wage-helper">
+        <summary>開始・終了時刻から自動入力</summary>
+        <div class="row2">
+          <div><label for="student-shift-start">1回の勤務開始</label><input type="time" id="student-shift-start" value="22:00"></div>
+          <div><label for="student-shift-end">1回の勤務終了</label><input type="time" id="student-shift-end" value="05:00"></div>
+        </div>
+        <div class="row2">
+          <div><label for="student-shift-count">同じ勤務の回数</label><input type="number" inputmode="numeric" min="1" max="366" step="1" id="student-shift-count" value="1"></div>
+          <div><label>割増対象時間帯（原則22:00〜翌5:00）</label><div class="row2"><div><label class="wage-time-label" for="student-night-start">開始</label><input type="time" id="student-night-start" value="22:00"></div><div><label class="wage-time-label" for="student-night-end">終了</label><input type="time" id="student-night-end" value="05:00"></div></div></div>
+        </div>
+        <button type="button" class="btn-sub" onclick="applyWageShiftTimes()">合計時間と深夜時間を置き換える</button>
+        <p class="wage-note">終了が開始より早い場合は翌日として計算します。休憩は含まれるため、反映後に実働時間へ調整し、深夜帯の休憩分は深夜時間からも引いてください。勤務先がより広い割増対象時間を定めている場合などは時間帯を調整できます。</p>
+      </details>
+      <div class="row2">
+        <div><label for="student-transport">交通費など</label><input type="number" inputmode="numeric" min="0" max="10000000" id="student-transport" placeholder="0" oninput="calculateStudentWage()"></div>
+        <div><label for="student-paydate">振込予定日</label><input type="date" id="student-paydate"></div>
+      </div>
+      <div class="student-result" id="student-wage-result" role="status" aria-live="polite">時給と勤務時間を入力してください</div>
       <button class="btn-primary" onclick="saveWageEstimate()">収入予定として予報に入れる</button>
-      <p class="empty" style="padding:10px 0 0">概算です。実際の明細が出たら金額を更新してください。</p>
+      <p class="empty" style="padding:10px 0 0">税引前の概算です。法定時間外・法定休日と重なる割増、税金・社会保険等の控除は含みません。勤務先の契約や適法な月次端数処理により実際の給与と異なります。</p>
     </div>
 
     <div class="card" id="student-loan-card">
@@ -2562,6 +2585,13 @@ function renderStudentTools() {
   S.student = S.student || {};
   $('student-hourly').value = S.student.hourlyWage || '';
   $('student-hours').value = S.student.monthlyHours || '';
+  $('student-night-hours').value = S.student.deepNightHours || '';
+  $('student-night-rate').value = S.student.deepNightPremiumRate >= 25 ? S.student.deepNightPremiumRate : 25;
+  $('student-shift-start').value = S.student.shiftStart || '22:00';
+  $('student-shift-end').value = S.student.shiftEnd || '05:00';
+  $('student-shift-count').value = S.student.shiftCount || 1;
+  $('student-night-start').value = S.student.deepNightStart || '22:00';
+  $('student-night-end').value = S.student.deepNightEnd || '05:00';
   $('student-transport').value = S.student.transport || '';
   if (!$('student-paydate').value) $('student-paydate').value = S.student.payDate || nextPayday();
   calculateStudentWage();
@@ -2570,16 +2600,127 @@ function renderStudentTools() {
   renderGoals();
 }
 
+function minutesToHourInput(minutes) {
+  return String(Math.round(minutes / 60 * 10000) / 10000);
+}
+
+function formatWorkDuration(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours ? `${hours}時間` : ''}${rest ? `${rest}分` : ''}` || '0分';
+}
+
+function timeInputToMinutes(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value || '');
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
+}
+
+function calculateShiftTimeBreakdown(shiftStartValue, shiftEndValue, nightStartValue, nightEndValue) {
+  const shiftStart = timeInputToMinutes(shiftStartValue);
+  let shiftEnd = timeInputToMinutes(shiftEndValue);
+  const nightStart = timeInputToMinutes(nightStartValue);
+  let nightEnd = timeInputToMinutes(nightEndValue);
+  if ([shiftStart, shiftEnd, nightStart, nightEnd].some(value => value === null)) return { valid:false };
+  if (shiftStart === shiftEnd || nightStart === nightEnd) return { valid:false };
+  if (shiftEnd < shiftStart) shiftEnd += 1440;
+  if (nightEnd < nightStart) nightEnd += 1440;
+  let nightMinutes = 0;
+  for (const offset of [-1440, 0, 1440]) {
+    nightMinutes += Math.max(0, Math.min(shiftEnd, nightEnd + offset) - Math.max(shiftStart, nightStart + offset));
+  }
+  return { valid:true, totalMinutes:shiftEnd - shiftStart, nightMinutes };
+}
+
+function wageShiftCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 1 && count <= 366 ? count : null;
+}
+
+function applyWageShiftTimes() {
+  const count = wageShiftCount($('student-shift-count').value);
+  const shift = calculateShiftTimeBreakdown(
+    $('student-shift-start').value, $('student-shift-end').value,
+    $('student-night-start').value, $('student-night-end').value
+  );
+  if (!shift.valid) { toast('開始・終了時刻を確認してください'); return; }
+  if (count === null) { toast('勤務回数は1〜366回の整数にしてください'); return; }
+  const totalMinutes = shift.totalMinutes * count;
+  const nightMinutes = shift.nightMinutes * count;
+  if (totalMinutes > 744 * 60) { toast('合計勤務時間が744時間を超えています'); return; }
+  $('student-hours').value = minutesToHourInput(totalMinutes);
+  $('student-night-hours').value = minutesToHourInput(nightMinutes);
+  calculateStudentWage();
+  toast(`合計${formatWorkDuration(totalMinutes)}・深夜${formatWorkDuration(nightMinutes)}に置き換えました ✓`);
+}
+
+function wageNumber(value, max) {
+  const number = value === '' || value === null || value === undefined ? 0 : Number(value);
+  return { value:number, valid:Number.isFinite(number) && number >= 0 && number <= max };
+}
+
+function studentWageBreakdown(hourlyValue, hoursValue, nightHoursValue, nightRateValue, transportValue) {
+  const hourlyField = wageNumber(hourlyValue, 1000000);
+  const totalHoursField = wageNumber(hoursValue, 744);
+  const nightHoursField = wageNumber(nightHoursValue, 744);
+  const nightRateField = wageNumber(nightRateValue, 1000);
+  const transportField = wageNumber(transportValue, 10000000);
+  const hourly = hourlyField.value;
+  const totalHours = totalHoursField.value;
+  const nightHours = nightHoursField.value;
+  const nightRate = nightRateField.value;
+  const transport = transportField.value;
+  const basePay = hourly * totalHours;
+  const nightPremium = hourly * nightHours * nightRate / 100;
+  const grossAmount = basePay + nightPremium + transport;
+  const roundedAmount = Math.round(grossAmount);
+  const invalidInput = ![hourlyField, totalHoursField, nightHoursField, nightRateField, transportField].every(field => field.valid)
+    || !Number.isFinite(grossAmount) || !Number.isSafeInteger(roundedAmount) || roundedAmount > 10000000000;
+  return {
+    hourly, totalHours, nightHours, nightRate, transport, invalidInput,
+    invalidNightHours: nightHours > totalHours,
+    invalidNightRate: nightRate < 25,
+    nightPremium: Number.isFinite(nightPremium) ? Math.round(nightPremium) : 0,
+    amount: invalidInput ? 0 : Math.max(0, roundedAmount)
+  };
+}
+
 function calculateStudentWage() {
-  const hourly = Number($('student-hourly').value || 0);
-  const hours = Number($('student-hours').value || 0);
-  const transport = Number($('student-transport').value || 0);
-  const amount = Math.max(0, Math.round(hourly * hours + transport));
-  $('student-wage-result').textContent = amount ? `給料見込み ${yen(amount)}` : '時給と勤務時間を入力してください';
-  return amount;
+  const wage = studentWageBreakdown(
+    $('student-hourly').value, $('student-hours').value, $('student-night-hours').value,
+    $('student-night-rate').value, $('student-transport').value
+  );
+  if (wage.invalidInput) {
+    $('student-wage-result').textContent = '入力値が大きすぎるか、正しい数値ではありません';
+    return 0;
+  }
+  if (!wage.hourly || !wage.totalHours) {
+    $('student-wage-result').textContent = '時給と勤務時間を入力してください';
+    return 0;
+  }
+  if (wage.invalidNightHours) {
+    $('student-wage-result').textContent = '深夜勤務時間は合計時間以下にしてください';
+    return 0;
+  }
+  if (wage.invalidNightRate) {
+    $('student-wage-result').textContent = '深夜割増率は25％以上にしてください';
+    return 0;
+  }
+  const premiumText = wage.nightPremium ? `（深夜割増 +${yen(wage.nightPremium)}）` : '';
+  $('student-wage-result').textContent = `給料見込み ${yen(wage.amount)}${premiumText}`;
+  return wage.amount;
 }
 
 function saveWageEstimate() {
+  const wage = studentWageBreakdown(
+    $('student-hourly').value, $('student-hours').value, $('student-night-hours').value,
+    $('student-night-rate').value, $('student-transport').value
+  );
+  if (wage.invalidInput) { toast('入力値が大きすぎるか、正しい数値ではありません'); return; }
+  if (wage.invalidNightHours) { toast('深夜勤務時間は合計時間以下にしてください'); return; }
+  if (wage.invalidNightRate) { toast('深夜割増率は25％以上にしてください'); return; }
   const amount = calculateStudentWage();
   const payDate = $('student-paydate').value;
   if (!amount) { toast('時給と勤務時間を入力してください'); return; }
@@ -2596,8 +2737,12 @@ function saveWageEstimate() {
   else S.transactions.push(estimate);
   S.student = {
     ...S.student,
-    hourlyWage: Number($('student-hourly').value), monthlyHours: Number($('student-hours').value),
-    transport: Number($('student-transport').value || 0), payDate, wageEstimateId: estimate.id
+    hourlyWage: wage.hourly, monthlyHours: wage.totalHours,
+    deepNightHours: wage.nightHours, deepNightPremiumRate: wage.nightRate,
+    deepNightStart: $('student-night-start').value || '22:00', deepNightEnd: $('student-night-end').value || '05:00',
+    shiftStart: $('student-shift-start').value, shiftEnd: $('student-shift-end').value,
+    shiftCount: wageShiftCount($('student-shift-count').value) || 1,
+    transport: wage.transport, payDate, wageEstimateId: estimate.id
   };
   persist();
   showView('home');
@@ -3062,6 +3207,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 深夜給料・クラウド同期対応</div>
 </body>
 </html>
