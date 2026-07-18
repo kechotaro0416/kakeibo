@@ -82,6 +82,11 @@
   .forecast-row:first-child { border-top:0; }
   .forecast-row span:first-child { flex:1; color:var(--muted); }
   .forecast-row strong { font-variant-numeric:tabular-nums; }
+  .student-tool { display:flex; align-items:center; gap:9px; border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:11px; text-align:left; cursor:pointer; font-weight:750; }
+  .student-tool .tool-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:10px; background:var(--accent-soft); color:var(--accent); font-size:16px; }
+  .student-result { margin-top:12px; border-radius:12px; padding:12px; background:var(--accent-soft); color:var(--accent); font-weight:800; text-align:center; }
+  .goal-bar { height:9px; border-radius:999px; background:var(--line); overflow:hidden; margin-top:7px; }
+  .goal-bar span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),#9b6cff); }
   .starter-guide { border: 1px solid #dedbff; background: #fbfaff; }
   .starter-guide h2 { color: var(--accent); margin-bottom: 3px; }
   .starter-guide .guide-lead { font-size: 13px; color: var(--muted); margin-bottom: 9px; }
@@ -336,6 +341,14 @@
       <div class="collapse-content" id="forecast-breakdown"></div>
     </div>
     <div class="card">
+      <h2>大学生活ツール</h2>
+      <div class="quick-grid">
+        <button class="student-tool" onclick="showStudentTool('student-wage-card')"><span class="tool-icon">¥</span><span>バイト代<br><small style="color:var(--muted)">給料を予測</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-loan-card')"><span class="tool-icon">⇄</span><span>割り勘・立替<br><small style="color:var(--muted)">返金を管理</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-goal-card')"><span class="tool-icon">○</span><span>貯金目標<br><small style="color:var(--muted)">旅行や学費</small></span></button>
+      </div>
+    </div>
+    <div class="card">
       <h2>いまのお金</h2>
       <div id="balance-list"></div>
     </div>
@@ -459,6 +472,61 @@
       </div>
       <button class="btn-primary" onclick="saveRec()">保存</button>
       <button class="btn-danger" onclick="closeRecForm()" style="border-color:var(--line);color:var(--muted)">キャンセル</button>
+    </div>
+  </div>
+
+  <!-- 大学生向けツール -->
+  <div class="view" id="view-student">
+    <button class="btn-mini" style="margin-bottom:12px" onclick="showView('home')">← ホームへ戻る</button>
+
+    <div class="card" id="student-wage-card">
+      <h2>バイト代の見込み</h2>
+      <div class="row2">
+        <div><label>時給</label><input type="number" inputmode="numeric" id="student-hourly" placeholder="例: 1200" oninput="calculateStudentWage()"></div>
+        <div><label>勤務時間</label><input type="number" inputmode="decimal" step="0.25" id="student-hours" placeholder="例: 48" oninput="calculateStudentWage()"></div>
+      </div>
+      <div class="row2">
+        <div><label>交通費など</label><input type="number" inputmode="numeric" id="student-transport" placeholder="0" oninput="calculateStudentWage()"></div>
+        <div><label>振込予定日</label><input type="date" id="student-paydate"></div>
+      </div>
+      <div class="student-result" id="student-wage-result">時給と勤務時間を入力してください</div>
+      <button class="btn-primary" onclick="saveWageEstimate()">収入予定として予報に入れる</button>
+      <p class="empty" style="padding:10px 0 0">概算です。実際の明細が出たら金額を更新してください。</p>
+    </div>
+
+    <div class="card" id="student-loan-card">
+      <h2>割り勘計算</h2>
+      <div class="row2">
+        <div><label>合計金額</label><input type="number" inputmode="numeric" id="split-total" placeholder="例: 12000" oninput="calculateSplit()"></div>
+        <div><label>人数</label><input type="number" inputmode="numeric" id="split-people" value="2" min="2" oninput="calculateSplit()"></div>
+      </div>
+      <div class="student-result" id="split-result">金額を入力してください</div>
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="addSplitReceivable()">自分が立て替えた分として追加</button>
+
+      <h2 style="margin-top:22px">立て替え・借りたお金</h2>
+      <div id="loan-summary" class="alert-ok"></div>
+      <div id="loan-list"></div>
+      <div class="row2">
+        <div><label>種類</label><select id="loan-direction"><option value="receivable">返してもらう</option><option value="payable">自分が返す</option></select></div>
+        <div><label>相手</label><input type="text" id="loan-person" placeholder="名前"></div>
+      </div>
+      <div class="row2">
+        <div><label>金額</label><input type="number" inputmode="numeric" id="loan-amount" placeholder="0"></div>
+        <div><label>期限（任意）</label><input type="date" id="loan-due"></div>
+      </div>
+      <label>メモ（任意）</label><input type="text" id="loan-memo" placeholder="例: 飲み会、旅行代">
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="addLoan()">追加する</button>
+    </div>
+
+    <div class="card" id="student-goal-card">
+      <h2>貯金目標</h2>
+      <div id="goal-list"></div>
+      <label>目標名</label><input type="text" id="goal-name" placeholder="例: 夏旅行、教科書、免許">
+      <div class="row2">
+        <div><label>目標金額</label><input type="number" inputmode="numeric" id="goal-target" placeholder="0"></div>
+        <div><label>期限（任意）</label><input type="date" id="goal-deadline"></div>
+      </div>
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="addGoal()">目標を追加</button>
     </div>
   </div>
 
@@ -717,7 +785,7 @@ function showView(name) {
   $('view-' + name).classList.add('active');
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   $('month-nav').style.visibility = (name === 'home' || name === 'history') ? 'visible' : 'hidden';
-  const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', settings:'設定' };
+  const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', student:'大学生活ツール', settings:'設定' };
   $('header-title').innerHTML = name === 'home'
     ? '<span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M9 12c.7 1.1 1.5 1.6 3 1.6s2.3-.5 3-1.6M9.5 9.5h.01M14.5 9.5h.01"></path></svg></span>のこりん <span class="beta-badge">v2 β</span>'
     : titles[name];
@@ -744,7 +812,13 @@ function render() {
   if (currentView === 'history') renderHistory();
   if (currentView === 'entry') renderEntryOptions();
   if (currentView === 'recurring') renderRecurring();
+  if (currentView === 'student') renderStudentTools();
   if (currentView === 'settings') renderSettings();
+}
+
+function showStudentTool(id) {
+  showView('student');
+  setTimeout(() => $(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
 }
 
 function renderHome() {
@@ -1776,6 +1850,161 @@ async function deleteRec(id) {
   });
 }
 
+/* ---------- 大学生向けツール ---------- */
+function nextPayday() {
+  const today = todayStr();
+  const d = new Date(today + 'T00:00:00');
+  d.setDate(25);
+  if (`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` <= today) d.setMonth(d.getMonth() + 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function renderStudentTools() {
+  S.student = S.student || {};
+  $('student-hourly').value = S.student.hourlyWage || '';
+  $('student-hours').value = S.student.monthlyHours || '';
+  $('student-transport').value = S.student.transport || '';
+  if (!$('student-paydate').value) $('student-paydate').value = S.student.payDate || nextPayday();
+  calculateStudentWage();
+  calculateSplit();
+  renderLoans();
+  renderGoals();
+}
+
+function calculateStudentWage() {
+  const hourly = Number($('student-hourly').value || 0);
+  const hours = Number($('student-hours').value || 0);
+  const transport = Number($('student-transport').value || 0);
+  const amount = Math.max(0, Math.round(hourly * hours + transport));
+  $('student-wage-result').textContent = amount ? `給料見込み ${yen(amount)}` : '時給と勤務時間を入力してください';
+  return amount;
+}
+
+function saveWageEstimate() {
+  const amount = calculateStudentWage();
+  const payDate = $('student-paydate').value;
+  if (!amount) { toast('時給と勤務時間を入力してください'); return; }
+  if (!payDate) { toast('振込予定日を入力してください'); return; }
+  const methodId = debitMethodId() || (S.paymentMethods.find(m => m.type === 'cash') || S.paymentMethods[0]).id;
+  const old = S.student.wageEstimateId ? S.transactions.find(t => t.id === S.student.wageEstimateId) : null;
+  const estimate = {
+    id: old?.id || uid(), type: 'income', amount, date: payDate,
+    category: S.categories.income.includes('バイト代') ? 'バイト代' : S.categories.income[0],
+    methodId, memo: 'バイト代（見込み）', recurringId: null,
+    createdAt: old?.createdAt || Date.now(), isEstimate: true
+  };
+  if (old) S.transactions[S.transactions.findIndex(t => t.id === old.id)] = estimate;
+  else S.transactions.push(estimate);
+  S.student = {
+    ...S.student,
+    hourlyWage: Number($('student-hourly').value), monthlyHours: Number($('student-hours').value),
+    transport: Number($('student-transport').value || 0), payDate, wageEstimateId: estimate.id
+  };
+  persist();
+  showView('home');
+  toast('バイト代の見込みを予報に追加しました ✓');
+}
+
+function calculateSplit() {
+  const total = Math.round(Number($('split-total').value || 0));
+  const people = Math.max(2, Math.round(Number($('split-people').value || 2)));
+  const own = total ? Math.ceil(total / people) : 0;
+  const receive = Math.max(0, total - own);
+  $('split-result').textContent = total ? `1人 ${yen(own)}・返してもらう合計 ${yen(receive)}` : '金額を入力してください';
+  return { total, people, own, receive };
+}
+
+function addSplitReceivable() {
+  const split = calculateSplit();
+  if (!split.receive) { toast('合計金額と人数を確認してください'); return; }
+  S.loans.push({
+    id: uid(), direction: 'receivable', person: `割り勘（${split.people - 1}人分）`, amount: split.receive,
+    dueDate: '', memo: `合計${yen(split.total)}を${split.people}人で割り勘`, settled: false, createdAt: Date.now()
+  });
+  persist(); renderLoans();
+  $('split-total').value = '';
+  calculateSplit();
+  toast('返してもらう金額に追加しました ✓');
+}
+
+function addLoan() {
+  const person = $('loan-person').value.trim();
+  const amount = Math.round(Number($('loan-amount').value || 0));
+  if (!person) { toast('相手の名前を入力してください'); return; }
+  if (!amount) { toast('金額を入力してください'); return; }
+  S.loans.push({
+    id: uid(), direction: $('loan-direction').value, person, amount,
+    dueDate: $('loan-due').value, memo: $('loan-memo').value.trim(), settled: false, createdAt: Date.now()
+  });
+  persist();
+  $('loan-person').value = ''; $('loan-amount').value = ''; $('loan-due').value = ''; $('loan-memo').value = '';
+  renderLoans(); toast('追加しました ✓');
+}
+
+function renderLoans() {
+  const open = S.loans.filter(l => !l.settled);
+  const receive = open.filter(l => l.direction === 'receivable').reduce((sum, l) => sum + l.amount, 0);
+  const pay = open.filter(l => l.direction === 'payable').reduce((sum, l) => sum + l.amount, 0);
+  $('loan-summary').textContent = open.length ? `返してもらう ${yen(receive)}・自分が返す ${yen(pay)}` : '未精算のお金はありません';
+  const rows = S.loans.slice().sort((a, b) => Number(a.settled) - Number(b.settled) || (b.createdAt || 0) - (a.createdAt || 0));
+  $('loan-list').innerHTML = rows.length ? rows.map(l => `
+    <div class="list-item ${l.settled ? 'inactive' : ''}">
+      <div class="info"><div class="name">${esc(l.person)}・${yen(l.amount)}</div><div class="sub">${l.direction === 'receivable' ? '返してもらう' : '自分が返す'}${l.dueDate ? `・期限 ${fmtMD(l.dueDate)}` : ''}${l.memo ? `・${esc(l.memo)}` : ''}</div></div>
+      ${l.settled ? '<span class="chip done">精算済み</span>' : `<button class="btn-record" onclick="settleLoan('${l.id}')">精算</button>`}
+      <button class="btn-mini" onclick="deleteLoan('${l.id}')">削除</button>
+    </div>`).join('') : '<div class="empty">割り勘や立て替えを追加すると、返金忘れを防げます。</div>';
+}
+
+function settleLoan(id) {
+  const loan = S.loans.find(l => l.id === id);
+  if (!loan) return;
+  loan.settled = true; loan.settledAt = Date.now();
+  persist(); renderLoans();
+  toast('精算済みにしました。実際のお金の動きは記帳してください');
+}
+
+async function deleteLoan(id) {
+  if (!await appConfirm('この立て替え・借りたお金を削除しますか？')) return;
+  S.loans = S.loans.filter(l => l.id !== id);
+  persist(); renderLoans();
+}
+
+function addGoal() {
+  const name = $('goal-name').value.trim();
+  const target = Math.round(Number($('goal-target').value || 0));
+  if (!name) { toast('目標名を入力してください'); return; }
+  if (!target) { toast('目標金額を入力してください'); return; }
+  S.goals.push({ id: uid(), name, target, saved: 0, deadline: $('goal-deadline').value, createdAt: Date.now() });
+  persist();
+  $('goal-name').value = ''; $('goal-target').value = ''; $('goal-deadline').value = '';
+  renderGoals(); toast('貯金目標を追加しました ✓');
+}
+
+function renderGoals() {
+  $('goal-list').innerHTML = S.goals.length ? S.goals.map(g => {
+    const pct = Math.min(100, Math.round((Number(g.saved || 0) / g.target) * 100));
+    return `<div class="list-item"><div class="info"><div class="name">${esc(g.name)} <span class="type-chip">${pct}%</span></div><div class="sub">${yen(g.saved || 0)} / ${yen(g.target)}${g.deadline ? `・${fmtMD(g.deadline)}まで` : ''}</div><div class="goal-bar"><span style="width:${pct}%"></span></div></div><button class="btn-mini" onclick="updateGoal('${g.id}')">貯金額</button><button class="btn-mini" onclick="deleteGoal('${g.id}')">削除</button></div>`;
+  }).join('') : '<div class="empty">旅行、教科書、免許などの目標を作れます。</div>';
+}
+
+async function updateGoal(id) {
+  const goal = S.goals.find(g => g.id === id);
+  if (!goal) return;
+  const value = await appPrompt(`「${goal.name}」に現在貯めている金額`, String(goal.saved || 0));
+  if (value == null) return;
+  const saved = Math.max(0, Math.round(Number(value.replace(/[,，¥\s円]/g, ''))));
+  if (!Number.isFinite(saved)) { toast('金額を数字で入力してください'); return; }
+  goal.saved = saved;
+  persist(); renderGoals();
+  toast(saved >= goal.target ? '目標達成！おめでとう ✓' : '貯金額を更新しました ✓');
+}
+
+async function deleteGoal(id) {
+  if (!await appConfirm('この貯金目標を削除しますか？')) return;
+  S.goals = S.goals.filter(g => g.id !== id);
+  persist(); renderGoals();
+}
+
 /* ---------- 設定 ---------- */
 function methodInUse(id) {
   return S.transactions.some(t => t.methodId === id || t.toId === id) || S.recurring.some(r => r.methodId === id);
@@ -2024,7 +2253,7 @@ if ('serviceWorker' in navigator) {
 }
 
 const DEFAULT_DATA = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   paymentMethods: [
     { id: 'm_cash',   name: '現金', type: 'cash' },
     { id: 'm_credit', name: 'クレジットカード', type: 'credit' },
@@ -2043,14 +2272,20 @@ const DEFAULT_DATA = {
   recurring: [],
   balances: {},
   settlementDays: [10, 27],
+  student: {},
+  loans: [],
+  goals: [],
 };
 
 function normalizeData(data) {
   if (!data || !Array.isArray(data.transactions) || !Array.isArray(data.paymentMethods)) throw new Error('bad data');
-  data.schemaVersion = 2;
+  data.schemaVersion = 3;
   data.recurring = Array.isArray(data.recurring) ? data.recurring : [];
   data.balances = data.balances || {};
   data.settlementDays = Array.isArray(data.settlementDays) && data.settlementDays.length ? data.settlementDays : [10, 27];
+  data.student = data.student || {};
+  data.loans = Array.isArray(data.loans) ? data.loans : [];
+  data.goals = Array.isArray(data.goals) ? data.goals : [];
   return data;
 }
 
