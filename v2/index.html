@@ -992,6 +992,13 @@ function cloudIsExpectedOAuthReturn() {
   } catch { return false; }
 }
 
+function safeCloudAuthErrorCode(error) {
+  const status = Number.isInteger(error?.status) ? error.status : 0;
+  const rawCode = String(error?.code || error?.name || 'unknown');
+  const code = /^[A-Za-z0-9_-]{1,48}$/.test(rawCode) ? rawCode : 'unknown';
+  return `${status}-${code}`;
+}
+
 function renderCloudStatus() {
   const status = $('cloud-status');
   const signedOut = $('cloud-signed-out');
@@ -1063,6 +1070,7 @@ async function initializeCloud() {
   let authEventsReady = false;
   let oauthSessionAttempted = false;
   let oauthFailureStage = '';
+  let oauthFailureDetail = '';
   try {
     await loadSupabaseLibrary();
     const cfg = cloudConfig();
@@ -1102,7 +1110,10 @@ async function initializeCloud() {
         const { data: sessionData, error: sessionError } = await cloudClient.auth.refreshSession({
           refresh_token: oauthReturn.refreshToken,
         });
-        if (sessionError || !sessionData.session) throw new Error('oauth session rejected');
+        if (sessionError || !sessionData.session) {
+          oauthFailureDetail = safeCloudAuthErrorCode(sessionError);
+          throw new Error('oauth session rejected');
+        }
 
         oauthFailureStage = 'user';
         const { data: userData, error: userError } = await cloudClient.auth.getUser(sessionData.session.access_token);
@@ -1127,16 +1138,18 @@ async function initializeCloud() {
     authEventsReady = true;
     renderCloudStatus();
     if (cloudSession) autoCloudSync();
-  } catch {
+  } catch (error) {
     authEventsReady = true;
+    if (!oauthFailureDetail && oauthFailureStage) oauthFailureDetail = safeCloudAuthErrorCode(error);
     if (oauthSessionAttempted && cloudClient) {
       try { await cloudClient.auth.signOut({ scope: 'local' }); }
       catch { /* 不完全な認証状態を使わないことを優先する */ }
       cloudSession = null;
     }
     const oauthFailureCode = oauthFailureStage === 'refresh' ? 'R1' : oauthFailureStage === 'user' ? 'U1' : 'C1';
+    const oauthDiagnostic = oauthFailureDetail ? `${oauthFailureCode}/${oauthFailureDetail}` : oauthFailureCode;
     cloudMessage = oauthReturn
-      ? `Googleログインを確認できませんでした（確認コード ${oauthFailureCode}）。もう一度お試しください。端末内のデータは残っています。`
+      ? `Googleログインを確認できませんでした（確認コード ${oauthDiagnostic}）。もう一度お試しください。端末内のデータは残っています。`
       : 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
     renderCloudStatus();
   }
@@ -3049,6 +3062,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン再修正版</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン診断2</div>
 </body>
 </html>
