@@ -1,5 +1,5 @@
-const CACHE_NAME = 'nokorin-v2-shell-9';
-const SHELL = ['./', './index.html', './cloud-config.js?v=4', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+const CACHE_NAME = 'nokorin-v2-shell-10';
+const SHELL = ['./', './index.html', './cloud-config.js?v=5', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
