@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="theme-color" content="#6c63ff">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <title>のこりん v2 β</title>
 <style>
   :root {
@@ -604,6 +608,15 @@
       <button class="btn-sub" style="margin-top:8px;width:100%" onclick="restoreFromText()">バックアップから復元（テキストを貼り付け）</button>
       <button class="btn-mini" style="margin-top:12px;width:100%" onclick="$('import-file').click()">バックアップファイルから復元</button>
       <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importData(this)">
+    </div>
+    <div class="card">
+      <h2>友達向けテスト</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">
+        iPhoneではSafariの共有ボタンから「ホーム画面に追加」を選ぶと、アプリのように起動できます。<br>
+        まず3日使い、「分かりにくい・面倒・欲しい」と思った点を教えてください。
+      </p>
+      <button class="btn-sub" style="margin-top:10px;width:100%" onclick="copyFeedbackTemplate()">感想・不具合報告のひな形をコピー</button>
+      <div class="alert-ok" style="margin-top:10px;margin-bottom:0">入力した金額や履歴は報告文に含めません。</div>
     </div>
   </div>
 </main>
@@ -2187,6 +2200,31 @@ async function backupToClipboard() {
   await p;
 }
 
+async function copyFeedbackTemplate() {
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches ? 'ホーム画面アプリ' : 'Safari';
+  const text = `【のこりん v2 テスト報告】
+使った画面: ${currentView}
+開き方: ${standalone}
+
+1. 分かりにくかったところ:
+
+2. 入力が面倒だったところ:
+
+3. 欲しい機能:
+
+4. 不具合の操作手順:
+
+※金額・残高・履歴は自動で含まれていません。必要な範囲だけ自分で追記してください。`;
+  let copied = false;
+  try { await navigator.clipboard.writeText(text); copied = true; } catch {}
+  if (copied) toast('報告のひな形をコピーしました ✓');
+  else {
+    const p = showModal('下の文章を長押ししてコピーしてください。', false, text, true);
+    $('modal-textarea').select();
+    await p;
+  }
+}
+
 async function restoreFromText() {
   const text = await showModal('バックアップのテキストをここに貼り付けてください', false, '', true);
   if (!text || !text.trim()) return;
@@ -2244,7 +2282,7 @@ function importData(input) {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      const registration = await navigator.serviceWorker.register('../sw.js', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
       registration.update();
     } catch {
       // 非対応のブラウザでも家計簿本体はそのまま使える
@@ -2326,6 +2364,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:22</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:52</div>
 </body>
 </html>
