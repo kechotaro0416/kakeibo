@@ -759,9 +759,12 @@ const BACKUP_KEY = 'nokorin-backups-v2';
 const AUTO_BACKUP_DATE_KEY = 'nokorin-last-auto-backup-v2';
 const CLOUD_LINKED_USER_KEY = 'nokorin-cloud-linked-user-v2';
 const CLOUD_HASH_KEY_PREFIX = 'nokorin-cloud-last-hash-v2:';
+const CLOUD_LOGIN_PENDING_KEY = 'nokorin-cloud-login-pending-v2';
 const CLOUD_TABLE = 'user_app_data';
-const SUPABASE_CDN_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+const SUPABASE_CDN_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.3';
 const CLOUD_REDIRECT_URL = 'https://kechotaro0416.github.io/kakeibo/v2/';
+const CLOUD_LOGIN_MAX_AGE_MS = 15 * 60 * 1000;
+const CLOUD_OAUTH_HASH_MAX_LENGTH = 20_000;
 const MAX_BACKUPS = 7;
 
 function readBackups() {
@@ -938,6 +941,57 @@ function cloudRedirectUrl() {
     : new URL('./', location.href).href;
 }
 
+function readCloudOAuthReturn() {
+  const raw = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+  if (!raw || !/(^|&)(access_token|refresh_token|error|error_description)=/.test(raw)) return null;
+  if (raw.length > CLOUD_OAUTH_HASH_MAX_LENGTH) return { hasError: false, validTokens: false };
+
+  const params = new URLSearchParams(raw);
+  const accessToken = params.get('access_token') || '';
+  const refreshToken = params.get('refresh_token') || '';
+  const tokenType = (params.get('token_type') || '').toLowerCase();
+  const hasError = params.has('error') || params.has('error_description');
+  const lengthsAreSafe = accessToken.length <= 8192 && refreshToken.length <= 4096;
+  return {
+    accessToken,
+    refreshToken,
+    hasError,
+    validTokens: !hasError && lengthsAreSafe && Boolean(accessToken && refreshToken) && tokenType === 'bearer',
+  };
+}
+
+function clearCloudOAuthReturn() {
+  history.replaceState(history.state, document.title, `${location.pathname}${location.search}`);
+}
+
+function markCloudLoginPending() {
+  try {
+    localStorage.setItem(CLOUD_LOGIN_PENDING_KEY, String(Date.now()));
+    return true;
+  } catch { return false; }
+}
+
+function clearCloudLoginPending() {
+  try { localStorage.removeItem(CLOUD_LOGIN_PENDING_KEY); }
+  catch { /* 期限切れ扱いになるため、そのまま安全に中止する */ }
+}
+
+function consumeCloudLoginPending() {
+  try {
+    const startedAt = Number(localStorage.getItem(CLOUD_LOGIN_PENDING_KEY));
+    localStorage.removeItem(CLOUD_LOGIN_PENDING_KEY);
+    const age = Date.now() - startedAt;
+    return Number.isFinite(startedAt) && startedAt > 0 && age >= -60_000 && age <= CLOUD_LOGIN_MAX_AGE_MS;
+  } catch { return false; }
+}
+
+function cloudIsExpectedOAuthReturn() {
+  try {
+    const expected = new URL(cloudRedirectUrl());
+    return location.origin === expected.origin && location.pathname === expected.pathname;
+  } catch { return false; }
+}
+
 function renderCloudStatus() {
   const status = $('cloud-status');
   const signedOut = $('cloud-signed-out');
@@ -1004,17 +1058,21 @@ function loadSupabaseLibrary() {
 async function initializeCloud() {
   renderCloudStatus();
   if (!cloudIsConfigured() || cloudClient) return;
+  const oauthReturn = readCloudOAuthReturn();
+  if (oauthReturn) clearCloudOAuthReturn();
+  let authEventsReady = false;
+  let oauthSessionAttempted = false;
   try {
     await loadSupabaseLibrary();
     const cfg = cloudConfig();
     cloudClient = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        flowType: 'implicit',
+      },
     });
-    const { data, error } = await cloudClient.auth.getSession();
-    if (error) throw error;
-    cloudSession = data.session;
-    cloudMessage = '';
-    renderCloudStatus();
     cloudClient.auth.onAuthStateChange((event, session) => {
       const previousUserId = cloudSession?.user?.id || '';
       cloudSession = session;
@@ -1023,16 +1081,59 @@ async function initializeCloud() {
         cloudNeedsChoice = false;
         cloudConflict = false;
       }
-      if (!session) cloudMessage = 'ログアウトしました。端末内のデータは残っています。';
+      if (event === 'SIGNED_OUT') cloudMessage = 'ログアウトしました。端末内のデータは残っています。';
       else if (previousUserId !== nextUserId) cloudMessage = 'ログインを確認しました。同期状態を確認しています…';
       renderCloudStatus();
-      if (session && ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
+      if (authEventsReady && session && ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
         setTimeout(() => autoCloudSync(), 0);
       }
     });
+
+    const { data: storedData, error: storedError } = await cloudClient.auth.getSession();
+    if (storedError) throw storedError;
+    let session = storedData.session;
+
+    if (oauthReturn) {
+      const loginWasStartedHere = consumeCloudLoginPending();
+      if (oauthReturn.validTokens && loginWasStartedHere && cloudIsExpectedOAuthReturn()) {
+        oauthSessionAttempted = true;
+        const { data: sessionData, error: sessionError } = await cloudClient.auth.setSession({
+          access_token: oauthReturn.accessToken,
+          refresh_token: oauthReturn.refreshToken,
+        });
+        if (sessionError || !sessionData.session) throw new Error('oauth session rejected');
+
+        const { data: userData, error: userError } = await cloudClient.auth.getUser(sessionData.session.access_token);
+        if (userError || !userData.user || userData.user.id !== sessionData.session.user?.id) {
+          throw new Error('oauth user verification failed');
+        }
+        session = sessionData.session;
+        cloudMessage = 'ログインを確認しました。同期状態を確認しています…';
+      } else if (oauthReturn.hasError) {
+        cloudMessage = 'Googleログインがキャンセルされたか、完了できませんでした。もう一度お試しください。';
+      } else if (!loginWasStartedHere) {
+        cloudMessage = '安全確認のため、期限切れまたは別の画面から届いたログイン結果を無視しました。もう一度お試しください。';
+      } else {
+        cloudMessage = 'Googleログインを確認できませんでした。もう一度お試しください。';
+      }
+    } else {
+      cloudMessage = '';
+    }
+
+    cloudSession = session;
+    authEventsReady = true;
+    renderCloudStatus();
     if (cloudSession) autoCloudSync();
   } catch {
-    cloudMessage = 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
+    authEventsReady = true;
+    if (oauthSessionAttempted && cloudClient) {
+      try { await cloudClient.auth.signOut({ scope: 'local' }); }
+      catch { /* 不完全な認証状態を使わないことを優先する */ }
+      cloudSession = null;
+    }
+    cloudMessage = oauthReturn
+      ? 'Googleログインを確認できませんでした。もう一度お試しください。端末内のデータは残っています。'
+      : 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
     renderCloudStatus();
   }
 }
@@ -1040,6 +1141,12 @@ async function initializeCloud() {
 async function signInWithGoogle() {
   if (!cloudClient || cloudAuthBusy) {
     toast('同期機能の読み込み後にもう一度お試しください');
+    return;
+  }
+  if (!markCloudLoginPending()) {
+    cloudMessage = '安全なログイン準備ができませんでした。端末のストレージ設定を確認してください。';
+    renderCloudStatus();
+    toast('⚠ Googleログインを開始できませんでした');
     return;
   }
   cloudAuthBusy = true;
@@ -1055,6 +1162,7 @@ async function signInWithGoogle() {
     });
     if (error) throw error;
   } catch {
+    clearCloudLoginPending();
     cloudMessage = 'Googleログインを開始できませんでした。通信状態を確認してください。';
     toast('⚠ Googleログインを開始できませんでした');
   } finally {
@@ -1068,7 +1176,7 @@ async function signOutCloud() {
   cloudAuthBusy = true;
   renderCloudStatus();
   try {
-    const { error } = await cloudClient.auth.signOut();
+    const { error } = await cloudClient.auth.signOut({ scope: 'local' });
     if (error) throw error;
     cloudSession = null;
     cloudMessage = 'ログアウトしました。端末内のデータは残っています。';
@@ -2937,6 +3045,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン修正版</div>
 </body>
 </html>
