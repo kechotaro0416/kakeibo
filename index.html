@@ -688,15 +688,16 @@ function renderDueList() {
     return;
   }
   const chip = { done:'<span class="chip done">記帳済み ✓</span>', overdue:'<span class="chip overdue">未記帳！</span>', upcoming:'<span class="chip upcoming">予定</span>' };
+  const ym = `${view.y}-${pad2(view.m)}`;
   $('due-list').innerHTML = items.map(i => `
-    <div class="due-item">
+    <div class="due-item" ${i.status !== 'done' ? `onclick="editOccurrence('${i.r.id}','${ym}','${fmtMD(i.dueDate)}')" style="cursor:pointer"` : ''}>
       <div class="info">
-        <div class="name">${esc(i.r.name)}</div>
-        <div class="sub">${fmtMD(i.dueDate)}・${esc(methodName(i.r.methodId))}</div>
+        <div class="name">${esc(i.r.name)}${i.status !== 'done' ? ' <span style="color:var(--muted);font-size:12px">✎</span>' : ''}</div>
+        <div class="sub">${fmtMD(i.dueDate)}・${esc(methodName(i.r.methodId))}${i.status !== 'done' ? '・タップで今月分の金額を変更' : ''}</div>
       </div>
       <div class="amt ${i.r.kind === 'income' ? 'income' : ''}">${i.r.kind === 'income' ? '+' : ''}${yen(i.recordedAmount ?? i.amount)}</div>
       ${chip[i.status]}
-      ${i.status !== 'done' ? `<button class="btn-record" onclick="recordFromRecurring('${i.r.id}','${i.dueDate}',${i.amount})">記帳</button>` : ''}
+      ${i.status !== 'done' ? `<button class="btn-record" onclick="event.stopPropagation(); recordFromRecurring('${i.r.id}','${i.dueDate}',${i.amount})">記帳</button>` : ''}
     </div>`).join('');
 }
 
@@ -1010,22 +1011,13 @@ function renderUpcoming() {
     }
   }
   $('upcoming-alerts').innerHTML = alerts;
-  if (!items.length) {
-    $('upcoming-list').innerHTML = '<div class="empty">入出金予定はありません。「固定費」タブから登録できます</div>';
-    return;
-  }
-  // 各支払い後の残高をシミュレーション表示
+  // 固定費・定期収入は記帳するまで一覧に表示しない（判定や「この後」残高の計算には含めたまま）
   const balMap = {};
   for (const m of tracked) balMap[m.id] = balanceOf(m.id);
   let lastYm = '';
-  $('upcoming-list').innerHTML = items.map(i => {
-    // 月が変わるところに見出しを入れる
-    let head = '';
-    const ym = i.date.slice(0, 7);
-    if (ym !== lastYm) {
-      head = `<div class="day-head">${Number(ym.slice(0, 4))}年${Number(ym.slice(5, 7))}月</div>`;
-      lastYm = ym;
-    }
+  let html = '';
+  for (const i of items) {
+    // 残高シミュレーションは非表示の項目も含めて日付順に進める
     let afterHtml = '';
     const showAfter = accId => {
       const after = balMap[accId];
@@ -1041,12 +1033,18 @@ function renderUpcoming() {
       balMap[i.methodId] += i.flow === 'in' ? i.amount : -i.amount;
       showAfter(i.methodId);
     }
+    if (i.recId) continue;                     // 未記帳の固定費・定期収入の行はここには出さない
+    const ym = i.date.slice(0, 7);
+    if (ym !== lastYm) {
+      html += `<div class="day-head">${Number(ym.slice(0, 4))}年${Number(ym.slice(5, 7))}月</div>`;
+      lastYm = ym;
+    }
     const isIn = i.flow === 'in';
-    return head + `
-    <div class="due-item" ${i.recId ? `onclick="editOccurrence('${i.recId}','${i.ym}','${fmtMD(i.date)}')" style="cursor:pointer"` : ''}>
+    html += `
+    <div class="due-item">
       <div class="info">
-        <div class="name">${esc(i.name)}${i.recId ? ' <span style="color:var(--muted);font-size:12px">✎</span>' : ''}</div>
-        <div class="sub">${fmtMD(i.date)}・${esc(methodName(i.methodId))}${i.toId ? ' → ' + esc(methodName(i.toId)) : ''}${i.recId ? '・タップでこの回の金額を変更' : ''}</div>
+        <div class="name">${esc(i.name)}</div>
+        <div class="sub">${fmtMD(i.date)}・${esc(methodName(i.methodId))}${i.toId ? ' → ' + esc(methodName(i.toId)) : ''}</div>
       </div>
       <div style="text-align:right">
         <div class="amt ${isIn ? 'income' : ''}">${isIn ? '+' : ''}${yen(i.amount)}</div>
@@ -1054,7 +1052,9 @@ function renderUpcoming() {
       </div>
       <span class="chip ${i.noteClass}">${i.note}</span>
     </div>`;
-  }).join('');
+  }
+  const note = '<div class="empty" style="padding:10px 0 2px;font-size:12px">固定費・定期収入は記帳するとここに並びます（上の判定や残高の計算には含まれています）</div>';
+  $('upcoming-list').innerHTML = (html || '<div class="empty">記帳済みの入出金予定はまだありません</div>') + note;
 }
 
 async function setBalance(id) {
