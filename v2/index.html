@@ -72,6 +72,16 @@
   .quick-actions { display:flex; gap:8px; margin-bottom:14px; }
   .quick-actions button { flex:1; border:0; border-radius:11px; padding:11px 8px; font-weight:700; cursor:pointer; background:#fff; color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.06); }
   .quick-actions button.primary { background:var(--accent); color:#fff; }
+  .quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .quick-entry { border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:10px; text-align:left; cursor:pointer; }
+  .quick-entry .qname { display:block; font-size:13px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .quick-entry .qsub { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
+  .count-badge { display:inline-block; min-width:20px; margin-left:5px; padding:2px 6px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:10px; text-align:center; vertical-align:1px; }
+  .count-badge.warn { background:var(--warn-bg); color:var(--warn); }
+  .forecast-row { display:flex; align-items:center; padding:7px 0; border-top:1px solid var(--line); font-size:13px; }
+  .forecast-row:first-child { border-top:0; }
+  .forecast-row span:first-child { flex:1; color:var(--muted); }
+  .forecast-row strong { font-variant-numeric:tabular-nums; }
   .starter-guide { border: 1px solid #dedbff; background: #fbfaff; }
   .starter-guide h2 { color: var(--accent); margin-bottom: 3px; }
   .starter-guide .guide-lead { font-size: 13px; color: var(--muted); margin-bottom: 9px; }
@@ -270,6 +280,7 @@
     transition: all .25s; z-index: 100; white-space: nowrap;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast button { margin-left:10px; border:0; border-radius:999px; padding:5px 9px; background:#fff; color:var(--accent); font-weight:800; cursor:pointer; }
   @media (max-width: 420px) {
     .row2 { flex-direction:column; gap:0; }
     .history-tools { gap:6px; }
@@ -309,11 +320,20 @@
       <div class="hero-meta">
         <div><div class="label">次の予定</div><div class="value" id="next-plan-value">—</div></div>
         <div><div class="label">今月の支出</div><div class="value" id="hero-expense-value">¥0</div></div>
+        <div><div class="label">1日あたり目安</div><div class="value" id="daily-budget-value">—</div></div>
       </div>
     </div>
     <div class="quick-actions">
       <button class="primary" onclick="showView('entry'); focusAmount()">＋ 今日の出費を記録</button>
       <button onclick="showView('history')">記録をみる</button>
+    </div>
+    <div class="card" id="quick-entry-card" style="display:none">
+      <h2>いつもの記帳</h2>
+      <div class="quick-grid" id="quick-entry-list"></div>
+    </div>
+    <div class="card" id="forecast-detail-card" style="display:none">
+      <div class="section-toggle"><h2>この金額になる理由</h2><button onclick="toggleCard(this)">内訳を見る</button></div>
+      <div class="collapse-content" id="forecast-breakdown"></div>
     </div>
     <div class="card">
       <h2>いまのお金</h2>
@@ -328,11 +348,11 @@
       </div>
     </div>
     <div class="card">
-      <div class="section-toggle"><h2 id="upcoming-title">今後の入出金予定</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="section-toggle"><h2 id="upcoming-title">今後の入出金予定 <span class="count-badge" id="upcoming-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
       <div class="collapse-content"><div id="upcoming-alerts"></div><div id="upcoming-list"></div></div>
     </div>
     <div class="card">
-      <div class="section-toggle"><h2>この月の固定費・支払い予定</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="section-toggle"><h2>この月の固定費・支払い予定 <span class="count-badge" id="due-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
       <div class="collapse-content"><div id="due-alert"></div><div id="due-list"></div></div>
     </div>
     <div class="card" id="credit-bills-card">
@@ -602,6 +622,18 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+function toastAction(msg, label, action) {
+  const t = $('toast');
+  t.textContent = msg;
+  const button = document.createElement('button');
+  button.textContent = label;
+  button.onclick = () => { action(); t.classList.remove('show'); };
+  t.appendChild(button);
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 5000);
+}
+
 const STORE_KEY = 'nokorin-data-v2';
 const LEGACY_STORE_KEY = 'kakeibo-data-v1';
 const BACKUP_KEY = 'nokorin-backups-v2';
@@ -725,6 +757,7 @@ function renderHome() {
   $('sum-balance').className = 'val ' + (bal >= 0 ? 'income' : 'expense');
   renderStarterGuide();
   renderHero(expense);
+  renderQuickEntries();
 
   renderBalances();
   renderUpcoming();
@@ -763,20 +796,84 @@ function openBalanceSetup() {
 
 function renderHero(expense) {
   const rows = trackedMethods().filter(m => S.balances[m.id]);
-  if (!rows.length) {
+  const ids = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
+  if (!ids.size) {
     $('free-money-value').textContent = '—';
     $('free-money-note').textContent = '残高を入れると、のこりんが使える額を予報します';
     $('hero-cheer').textContent = 'まずは残高を入力しよう';
+    $('daily-budget-value').textContent = '—';
+    $('forecast-detail-card').style.display = 'none';
   } else {
-    const ids = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
     const free = freeMoneyFrom(todayStr(), ids);
+    const daysLeft = Math.max(1, Math.round((new Date(free.horizon + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000));
+    const daily = free.free > 0 ? Math.floor(free.free / daysLeft) : 0;
     $('free-money-value').textContent = `${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}`;
     $('free-money-note').textContent = `${fmtMD(free.horizon)}まで、つかってOKの目安`;
-    $('hero-cheer').textContent = free.free >= 10000 ? '余裕！この調子でいこう' : free.free >= 0 ? 'ちょい注意、使いすぎに気をつけよう' : '節約モード。予定を見直そう';
+    $('daily-budget-value').textContent = free.free >= 0 ? yen(daily) : '¥0';
+    $('hero-cheer').textContent = free.free < 0 ? '節約モード。予定を見直そう' : daily >= 2000 ? '余裕！この調子でいこう' : daily >= 1000 ? 'いいペース。予定も確認しよう' : 'ちょい注意、使いすぎに気をつけよう';
+    renderForecastBreakdown(rows, ids, free, daysLeft);
   }
   $('hero-expense-value').textContent = yen(expense);
   const plans = upcomingPayments(90).filter(i => i.date >= todayStr()).sort((a,b) => a.date.localeCompare(b.date));
   $('next-plan-value').textContent = plans.length ? `${fmtMD(plans[0].date)} ${yen(plans[0].amount)}` : '予定なし';
+}
+
+function renderForecastBreakdown(rows, ids, free, daysLeft) {
+  const current = rows.filter(m => ids.has(m.id)).reduce((sum, m) => sum + Number(balanceOf(m.id) || 0), 0);
+  const items = upcomingPayments(daysLeft).filter(i => i.date > todayStr() && i.date <= free.horizon);
+  let income = 0, expense = 0;
+  for (const item of items) {
+    const fromCore = ids.has(item.methodId);
+    const toCore = ids.has(item.toId);
+    if (item.toId) {
+      if (fromCore && !toCore) expense += item.amount;
+      if (!fromCore && toCore) income += item.amount;
+    } else if (fromCore && item.flow === 'in') income += item.amount;
+    else if (fromCore) expense += item.amount;
+  }
+  $('forecast-detail-card').style.display = '';
+  $('forecast-breakdown').innerHTML = `
+    <div class="forecast-row"><span>いまの現金・銀行残高</span><strong>${current < 0 ? '−' : ''}${yen(Math.abs(current))}</strong></div>
+    <div class="forecast-row"><span>${fmtMD(free.horizon)}までの予定収入</span><strong style="color:var(--income)">+${yen(income)}</strong></div>
+    <div class="forecast-row"><span>${fmtMD(free.horizon)}までの予定支出</span><strong style="color:var(--expense)">−${yen(expense)}</strong></div>
+    <div class="forecast-row"><span>期間中に一番少なくなる残高</span><strong>${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}</strong></div>
+    <div class="empty" style="padding:8px 0 0">残り${daysLeft}日で均等に使った場合の目安です。予定外の支出は含まれません。</div>`;
+}
+
+function renderQuickEntries() {
+  const recent = S.transactions
+    .filter(t => t.type === 'expense')
+    .slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const seen = new Set();
+  const picks = [];
+  for (const t of recent) {
+    const key = `${t.category}|${t.methodId}|${t.memo || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key); picks.push(t);
+    if (picks.length === 4) break;
+  }
+  const card = $('quick-entry-card');
+  if (!picks.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  $('quick-entry-list').innerHTML = picks.map(t => `
+    <button class="quick-entry" onclick="openQuickEntry('${t.id}')">
+      <span class="qname">${esc(t.memo || t.category)}</span>
+      <span class="qsub">${yen(t.amount)}・${esc(methodName(t.methodId))}</span>
+    </button>`).join('');
+}
+
+function openQuickEntry(id) {
+  const t = S.transactions.find(x => x.id === id);
+  if (!t) return;
+  resetEntryForm();
+  setEntryType('expense');
+  fillCategorySelect($('f-category'), 'expense', t.category);
+  fillMethodSelect($('f-method'), t.methodId);
+  $('f-amount').value = t.amount;
+  $('f-date').value = todayStr();
+  $('f-memo').value = t.memo || '';
+  showView('entry');
+  toast('いつもの内容を入れました。金額を確認してください');
 }
 
 function toggleCard(btn) {
@@ -807,6 +904,10 @@ function dueItemsForViewMonth() {
 function renderDueList() {
   const items = dueItemsForViewMonth();
   const overdue = items.filter(i => i.status === 'overdue');
+  const pending = items.filter(i => i.status !== 'done');
+  const badge = $('due-badge');
+  badge.textContent = overdue.length ? `要確認 ${overdue.length}` : pending.length ? `${pending.length}件` : '';
+  badge.className = `count-badge${overdue.length ? ' warn' : ''}`;
   $('due-alert').innerHTML = overdue.length
     ? `<div class="alert">⚠ 支払日・入金日を過ぎた未記帳の項目が ${overdue.length} 件あります。実際のお金の動きを確認して記帳しましょう。</div>`
     : '';
@@ -1121,9 +1222,9 @@ function renderUpcoming() {
   const alertHorizon = addDaysStr(freeMoneyHorizon(todayStr()), 30);
   const items = upcomingPayments(365);
   const alertItems = items.filter(i => i.date <= alertHorizon);
-  $('upcoming-title').textContent = '今後の入出金予定（1年先まで）';
   const tracked = trackedMethods().filter(m => S.balances[m.id]);
   let alerts = '';
+  let hasShortfall = false;
   if (!tracked.length) {
     alerts = '<div class="empty" style="padding:4px 0 10px">「設定」タブで残高を入力すると、支払いに足りるかを自動チェックします</div>';
   } else {
@@ -1131,12 +1232,16 @@ function renderUpcoming() {
       if (!alertItems.some(i => i.methodId === m.id || i.toId === m.id)) continue;
       const sf = shortfallFor(m.id, alertItems);
       if (sf.lack) {
+        hasShortfall = true;
         alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
       } else {
         alerts += `<div class="alert-ok">✓ ${esc(m.name)} は ${fmtMD(alertHorizon)} までの支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
       }
     }
   }
+  const badge = $('upcoming-badge');
+  badge.textContent = hasShortfall ? '不足あり' : items.length ? `${items.length}件` : '';
+  badge.className = `count-badge${hasShortfall ? ' warn' : ''}`;
   $('upcoming-alerts').innerHTML = alerts;
   // 固定費・定期収入は記帳するまで一覧に表示しない（判定や「この後」残高の計算には含めたまま）
   const balMap = {};
@@ -1528,14 +1633,20 @@ function editTx(id) {
 async function deleteEntry() {
   if (!editingId) return;
   if (!await appConfirm('この記録を削除しますか？')) return;
+  const beforeDelete = JSON.stringify(S);
   const target = S.transactions.find(t => t.id === editingId);
   S.transactions = target?.splitId
     ? S.transactions.filter(t => t.splitId !== target.splitId)
     : S.transactions.filter(t => t.id !== editingId);
   persist();
-  toast('削除しました');
   resetEntryForm();
   showView('history');
+  toastAction('削除しました', '元に戻す', () => {
+    S = normalizeData(JSON.parse(beforeDelete));
+    persist();
+    showView('history');
+    toast('元に戻しました ✓');
+  });
 }
 
 function recordFromRecurring(recId, dueDate, amount) {
@@ -1654,8 +1765,14 @@ function toggleRec(id) {
 async function deleteRec(id) {
   const r = S.recurring.find(r => r.id === id);
   if (!await appConfirm(`「${r.name}」を削除しますか？（過去の記帳は残ります）`)) return;
+  const beforeDelete = JSON.stringify(S);
   S.recurring = S.recurring.filter(r => r.id !== id);
   persist(); render();
+  toastAction('削除しました', '元に戻す', () => {
+    S = normalizeData(JSON.parse(beforeDelete));
+    persist(); render();
+    toast('元に戻しました ✓');
+  });
 }
 
 /* ---------- 設定 ---------- */
