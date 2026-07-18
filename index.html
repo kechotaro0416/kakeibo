@@ -6,17 +6,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>家計簿</title>
+<title>のこりん</title>
 <style>
   :root {
     color-scheme: light;
-    --bg: #f1f5f4;
+    --bg: #f7f6ff;
     --card: #ffffff;
-    --text: #1c2b2a;
-    --muted: #6b7d7b;
-    --line: #e2e8e7;
-    --accent: #0f766e;
-    --accent-soft: #e6f2f1;
+    --text: #29274a;
+    --muted: #77758e;
+    --line: #e8e6f3;
+    --accent: #6c63ff;
+    --accent-soft: #eeedff;
     --income: #15803d;
     --expense: #dc2626;
     --warn-bg: #fef2f2;
@@ -56,10 +56,12 @@
     box-shadow: 0 1px 3px rgba(0,0,0,.06);
   }
   .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
-  .hero-card { background: linear-gradient(135deg, #0f766e, #115e59); color: #fff; }
+  .hero-card { position:relative; overflow:hidden; background: linear-gradient(135deg, #6c63ff, #9b6cff); color: #fff; }
+  .hero-card::after { content:'✦'; position:absolute; right:18px; top:8px; color:rgba(255,255,255,.22); font-size:62px; line-height:1; }
   .hero-card h2, .hero-card .hero-note { color: rgba(255,255,255,.78); }
   .hero-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .hero-note { font-size: 12px; margin-top: 4px; }
+  .hero-note { font-size: 12px; margin-top: 4px; position:relative; z-index:1; }
+  .hero-cheer { display:inline-block; margin-top:10px; padding:4px 9px; border-radius:999px; background:rgba(255,255,255,.18); color:#fff; font-size:12px; font-weight:700; position:relative; z-index:1; }
   .hero-meta { display:flex; gap:8px; margin-top:14px; }
   .hero-meta > div { flex:1; background:rgba(255,255,255,.13); border-radius:10px; padding:8px 10px; }
   .hero-meta .label { color:rgba(255,255,255,.72); font-size:11px; }
@@ -67,7 +69,7 @@
   .quick-actions { display:flex; gap:8px; margin-bottom:14px; }
   .quick-actions button { flex:1; border:0; border-radius:11px; padding:11px 8px; font-weight:700; cursor:pointer; background:#fff; color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.06); }
   .quick-actions button.primary { background:var(--accent); color:#fff; }
-  .starter-guide { border: 1px solid #cfe5e2; background: #f8fcfb; }
+  .starter-guide { border: 1px solid #dedbff; background: #fbfaff; }
   .starter-guide h2 { color: var(--accent); margin-bottom: 3px; }
   .starter-guide .guide-lead { font-size: 13px; color: var(--muted); margin-bottom: 9px; }
   .guide-step { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -239,7 +241,7 @@
   }
   nav button .ic { display: block; font-size: 21px; margin-bottom: 1px; }
   nav button.active { color: var(--accent); }
-  .fab { position:fixed; right:18px; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:11; width:54px; height:54px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:29px; line-height:1; box-shadow:0 5px 16px rgba(15,118,110,.35); cursor:pointer; }
+  .fab { position:fixed; right:18px; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:11; width:54px; height:54px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:29px; line-height:1; box-shadow:0 5px 16px rgba(108,99,255,.35); cursor:pointer; }
 
   #modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50;
@@ -275,7 +277,7 @@
 <body>
 
 <header>
-  <h1 id="header-title">家計簿</h1>
+  <h1 id="header-title">のこりん</h1>
   <div class="month-nav" id="month-nav">
     <button aria-label="前月" onclick="moveMonth(-1)">‹</button>
     <span id="month-label"></span>
@@ -288,24 +290,25 @@
   <div class="view" id="view-home">
     <div class="card starter-guide" id="starter-guide"></div>
     <div class="card hero-card">
-      <h2>自由に使えるお金</h2>
+      <h2>今月、あと</h2>
       <div class="hero-value" id="free-money-value">—</div>
-      <div class="hero-note" id="free-money-note">残高を設定すると、次の区切り日までの目安を表示します</div>
+      <div class="hero-note" id="free-money-note">残高を入れると、のこりんが使える額を予報します</div>
+      <div class="hero-cheer" id="hero-cheer">まずは残高を入力しよう</div>
       <div class="hero-meta">
         <div><div class="label">次の予定</div><div class="value" id="next-plan-value">—</div></div>
         <div><div class="label">今月の支出</div><div class="value" id="hero-expense-value">¥0</div></div>
       </div>
     </div>
     <div class="quick-actions">
-      <button class="primary" onclick="showView('entry'); focusAmount()">＋ 支出を記録</button>
-      <button onclick="showView('history')">履歴を探す</button>
+      <button class="primary" onclick="showView('entry'); focusAmount()">＋ 今日の出費を記録</button>
+      <button onclick="showView('history')">記録をみる</button>
     </div>
     <div class="card">
-      <h2>残高</h2>
+      <h2>いまのお金</h2>
       <div id="balance-list"></div>
     </div>
     <div class="card">
-      <h2>今月の収支</h2>
+      <h2>今月のお金の動き</h2>
       <div class="summary">
         <div><div class="label">収入</div><div class="val income" id="sum-income"></div></div>
         <div><div class="label">支出</div><div class="val expense" id="sum-expense"></div></div>
@@ -600,7 +603,7 @@ function showView(name) {
   $('view-' + name).classList.add('active');
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   $('month-nav').style.visibility = (name === 'home' || name === 'history') ? 'visible' : 'hidden';
-  const titles = { home:'家計簿', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', settings:'設定' };
+  const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', settings:'設定' };
   $('header-title').textContent = titles[name];
   render();
   window.scrollTo(0, 0);
@@ -661,8 +664,8 @@ function renderStarterGuide() {
   if (!remaining) { guide.style.display = 'none'; return; }
   guide.style.display = '';
   guide.innerHTML = `
-    <h2>はじめにやること</h2>
-    <div class="guide-lead">あと${remaining}項目で、残高と支払い予定を自動で確認できます。</div>
+    <h2>まずここだけやればOK！</h2>
+    <div class="guide-lead">あと${remaining}項目で、のこりんが残高と支払い予定を予報できます。</div>
     ${steps.map((s, i) => `<div class="guide-step ${s.done ? 'done' : ''}">
       <div class="guide-state">${s.done ? '✓' : i + 1}</div>
       <div class="guide-copy"><div class="guide-name">${s.name}</div><div class="guide-note">${s.note}</div></div>
@@ -679,12 +682,14 @@ function renderHero(expense) {
   const rows = trackedMethods().filter(m => S.balances[m.id]);
   if (!rows.length) {
     $('free-money-value').textContent = '—';
-    $('free-money-note').textContent = '設定から残高を入力すると、次の区切り日までの目安を表示します';
+    $('free-money-note').textContent = '残高を入れると、のこりんが使える額を予報します';
+    $('hero-cheer').textContent = 'まずは残高を入力しよう';
   } else {
     const ids = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
     const free = freeMoneyFrom(todayStr(), ids);
     $('free-money-value').textContent = `${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}`;
-    $('free-money-note').textContent = `${fmtMD(free.horizon)}まで支払いを終えた後も残る見込み`;
+    $('free-money-note').textContent = `${fmtMD(free.horizon)}まで、つかってOKの目安`;
+    $('hero-cheer').textContent = free.free >= 10000 ? '余裕！この調子でいこう' : free.free >= 0 ? 'ちょい注意、使いすぎに気をつけよう' : '節約モード。予定を見直そう';
   }
   $('hero-expense-value').textContent = yen(expense);
   const plans = upcomingPayments(90).filter(i => i.date >= todayStr()).sort((a,b) => a.date.localeCompare(b.date));
@@ -1851,6 +1856,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:59</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:16</div>
 </body>
 </html>
