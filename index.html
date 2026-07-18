@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>家計簿</title>
 <style>
   :root {
@@ -1803,6 +1804,18 @@ function importData(input) {
 }
 
 /* ---------- 起動 ---------- */
+// 画面ファイルだけは毎回更新確認する。家計簿データ（localStorage）には触れない。
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+      registration.update();
+    } catch {
+      // 非対応のブラウザでも家計簿本体はそのまま使える
+    }
+  });
+}
+
 const DEFAULT_DATA = {
   paymentMethods: [
     { id: 'm_cash',   name: '現金', type: 'cash' },
@@ -1838,6 +1851,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:55</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:59</div>
 </body>
 </html>
