@@ -38,7 +38,9 @@
     padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
     display: flex; align-items: center; justify-content: space-between;
   }
-  header h1 { font-size: 17px; font-weight: 700; }
+  header h1 { display:flex; align-items:center; gap:7px; font-size:17px; font-weight:800; letter-spacing:.02em; }
+  .brand-mark { width:26px; height:26px; display:grid; place-items:center; border-radius:9px; background:rgba(255,255,255,.2); }
+  .brand-mark svg { width:18px; height:18px; fill:none; stroke:#fff; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
   .month-nav { display: flex; align-items: center; gap: 4px; }
   .month-nav button {
     background: rgba(255,255,255,.18); border: none; color: #fff;
@@ -57,7 +59,7 @@
   }
   .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
   .hero-card { position:relative; overflow:hidden; background: linear-gradient(135deg, #6c63ff, #9b6cff); color: #fff; }
-  .hero-card::after { content:'✦'; position:absolute; right:18px; top:8px; color:rgba(255,255,255,.22); font-size:62px; line-height:1; }
+  .hero-illustration { position:absolute; right:12px; top:10px; width:76px; height:76px; opacity:.9; }
   .hero-card h2, .hero-card .hero-note { color: rgba(255,255,255,.78); }
   .hero-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .hero-note { font-size: 12px; margin-top: 4px; position:relative; z-index:1; }
@@ -239,7 +241,9 @@
     flex: 1; border: none; background: none; padding: 10px 0 8px;
     font-size: 10.5px; color: var(--muted); cursor: pointer; font-weight: 600;
   }
-  nav button .ic { display: block; font-size: 21px; margin-bottom: 1px; }
+  nav button .ic { display:grid; place-items:center; width:28px; height:28px; margin:0 auto 2px; border-radius:10px; }
+  nav button .ic svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  nav button.active .ic { background:var(--accent-soft); }
   nav button.active { color: var(--accent); }
   .fab { position:fixed; right:18px; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:11; width:54px; height:54px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:29px; line-height:1; box-shadow:0 5px 16px rgba(108,99,255,.35); cursor:pointer; }
 
@@ -277,7 +281,7 @@
 <body>
 
 <header>
-  <h1 id="header-title">のこりん</h1>
+  <h1 id="header-title"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M9 12c.7 1.1 1.5 1.6 3 1.6s2.3-.5 3-1.6M9.5 9.5h.01M14.5 9.5h.01"></path></svg></span>のこりん</h1>
   <div class="month-nav" id="month-nav">
     <button aria-label="前月" onclick="moveMonth(-1)">‹</button>
     <span id="month-label"></span>
@@ -290,6 +294,13 @@
   <div class="view" id="view-home">
     <div class="card starter-guide" id="starter-guide"></div>
     <div class="card hero-card">
+      <svg class="hero-illustration" viewBox="0 0 96 96" aria-hidden="true">
+        <circle cx="48" cy="48" r="31" fill="#ffd166"/>
+        <circle cx="48" cy="48" r="23" fill="#fff3c4"/>
+        <circle cx="40" cy="45" r="2.5" fill="#6c63ff"/><circle cx="56" cy="45" r="2.5" fill="#6c63ff"/>
+        <path d="M40 54c2.5 3 5.2 4.4 8 4.4s5.5-1.4 8-4.4" fill="none" stroke="#6c63ff" stroke-width="3" stroke-linecap="round"/>
+        <path d="M19 30l4 3m51-3l-4 3m-51 34l4-3m51 3l-4-3" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      </svg>
       <h2>今月、あと</h2>
       <div class="hero-value" id="free-money-value">—</div>
       <div class="hero-note" id="free-money-note">残高を入れると、のこりんが使える額を予報します</div>
@@ -505,11 +516,11 @@
 </main>
 
 <nav>
-  <button data-view="home" onclick="showView('home')"><span class="ic">🏠</span>ホーム</button>
-  <button data-view="entry" onclick="showView('entry')"><span class="ic">✏️</span>記帳</button>
-  <button data-view="history" onclick="showView('history')"><span class="ic">📋</span>履歴</button>
-  <button data-view="recurring" onclick="showView('recurring')"><span class="ic">🔁</span>固定費</button>
-  <button data-view="settings" onclick="showView('settings')"><span class="ic">⚙️</span>設定</button>
+  <button data-view="home" onclick="showView('home')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z"></path><path d="M9 21v-6h6v6"></path></svg></span>ホーム</button>
+  <button data-view="entry" onclick="showView('entry')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"></path><path d="m14.5 6 3.5 3.5"></path></svg></span>記帳</button>
+  <button data-view="history" onclick="showView('history')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 8h6M9 12h6M9 16h3"></path></svg></span>履歴</button>
+  <button data-view="recurring" onclick="showView('recurring')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M8 3v4m8-4v4M4 10h16m-9 5 2 2 4-4"></path></svg></span>固定費</button>
+  <button data-view="settings" onclick="showView('settings')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.4 2.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3.4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L5.6 17l.1-.1A1.7 1.7 0 0 0 6 15a1.7 1.7 0 0 0-1.5-1H4.3v-3.4h.2A1.7 1.7 0 0 0 6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1L8 4.6l.1.1A1.7 1.7 0 0 0 10 5a1.7 1.7 0 0 0 1-1.5v-.2h3.4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.5 1h.2v3.4h-.2a1.7 1.7 0 0 0-1.5 1.6Z"></path></svg></span>設定</button>
 </nav>
 <button class="fab" aria-label="支出を記録" onclick="showView('entry'); focusAmount()">＋</button>
 
@@ -604,7 +615,9 @@ function showView(name) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   $('month-nav').style.visibility = (name === 'home' || name === 'history') ? 'visible' : 'hidden';
   const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', settings:'設定' };
-  $('header-title').textContent = titles[name];
+  $('header-title').innerHTML = name === 'home'
+    ? '<span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M9 12c.7 1.1 1.5 1.6 3 1.6s2.3-.5 3-1.6M9.5 9.5h.01M14.5 9.5h.01"></path></svg></span>のこりん'
+    : titles[name];
   render();
   window.scrollTo(0, 0);
   if (name === 'entry' && !editingId) focusAmount();
@@ -1856,6 +1869,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:16</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:22</div>
 </body>
 </html>
