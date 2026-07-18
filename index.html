@@ -884,10 +884,11 @@ function upcomingPayments(days) {
   const end = addDaysStr(today, days);
   const now = new Date();
   const cy = now.getFullYear(), cm = now.getMonth() + 1;
+  const months = Math.ceil(days / 30) + 1;   // 期間をカバーする月数だけ繰り返す
   const items = [];
   for (const c of S.paymentMethods.filter(m => m.type === 'credit' && m.billing)) {
     const debitId = c.billing.debitMethodId || debitMethodId();
-    for (let off = 0; off <= 3; off++) {
+    for (let off = 0; off <= months; off++) {
       const [py, pm] = shiftYM(cy, cm, off);
       const b = billFor(c, py, pm);
       if (b.payDate >= today && b.payDate <= end && b.amount > 0)
@@ -900,7 +901,7 @@ function upcomingPayments(days) {
     const isIncome = r.kind === 'income';
     const pm2 = S.paymentMethods.find(m => m.id === r.methodId);
     if (!isIncome && pm2 && pm2.type === 'credit') continue;  // クレカ払いの固定費は請求側に含まれる
-    for (let off = 0; off <= 2; off++) {
+    for (let off = 0; off <= months; off++) {
       const [y, mo] = shiftYM(cy, cm, off);
       if (r.cycle === 'yearly' && r.month !== mo) continue;
       const due = recDueDate(r, y, mo);
@@ -987,34 +988,44 @@ async function editOccurrence(recId, ym, label) {
 }
 
 function renderUpcoming() {
-  // 予定一覧は「自由に使えるお金」の計算期間より1か月先まで見通せるようにする
-  const horizon = addDaysStr(freeMoneyHorizon(todayStr()), 30);
-  const items = upcomingPayments(120).filter(i => i.date <= horizon);
-  $('upcoming-title').textContent = `今後の入出金予定（${fmtMD(horizon)}まで）`;
+  // 一覧は登録からわかる範囲を全部（1年先まで）表示。
+  // 「足りますか」の判定だけは従来通り「区切り日＋30日」の範囲で行う（変更しない）。
+  const alertHorizon = addDaysStr(freeMoneyHorizon(todayStr()), 30);
+  const items = upcomingPayments(365);
+  const alertItems = items.filter(i => i.date <= alertHorizon);
+  $('upcoming-title').textContent = '今後の入出金予定（1年先まで）';
   const tracked = trackedMethods().filter(m => S.balances[m.id]);
   let alerts = '';
   if (!tracked.length) {
     alerts = '<div class="empty" style="padding:4px 0 10px">「設定」タブで残高を入力すると、支払いに足りるかを自動チェックします</div>';
   } else {
     for (const m of tracked) {
-      if (!items.some(i => i.methodId === m.id || i.toId === m.id)) continue;
-      const sf = shortfallFor(m.id, items);
+      if (!alertItems.some(i => i.methodId === m.id || i.toId === m.id)) continue;
+      const sf = shortfallFor(m.id, alertItems);
       if (sf.lack) {
         alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
       } else {
-        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は ${fmtMD(horizon)} までの支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
+        alerts += `<div class="alert-ok">✓ ${esc(m.name)} は ${fmtMD(alertHorizon)} までの支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
       }
     }
   }
   $('upcoming-alerts').innerHTML = alerts;
   if (!items.length) {
-    $('upcoming-list').innerHTML = `<div class="empty">${fmtMD(horizon)}までの入出金予定はありません</div>`;
+    $('upcoming-list').innerHTML = '<div class="empty">入出金予定はありません。「固定費」タブから登録できます</div>';
     return;
   }
   // 各支払い後の残高をシミュレーション表示
   const balMap = {};
   for (const m of tracked) balMap[m.id] = balanceOf(m.id);
+  let lastYm = '';
   $('upcoming-list').innerHTML = items.map(i => {
+    // 月が変わるところに見出しを入れる
+    let head = '';
+    const ym = i.date.slice(0, 7);
+    if (ym !== lastYm) {
+      head = `<div class="day-head">${Number(ym.slice(0, 4))}年${Number(ym.slice(5, 7))}月</div>`;
+      lastYm = ym;
+    }
     let afterHtml = '';
     const showAfter = accId => {
       const after = balMap[accId];
@@ -1031,7 +1042,7 @@ function renderUpcoming() {
       showAfter(i.methodId);
     }
     const isIn = i.flow === 'in';
-    return `
+    return head + `
     <div class="due-item" ${i.recId ? `onclick="editOccurrence('${i.recId}','${i.ym}','${fmtMD(i.date)}')" style="cursor:pointer"` : ''}>
       <div class="info">
         <div class="name">${esc(i.name)}${i.recId ? ' <span style="color:var(--muted);font-size:12px">✎</span>' : ''}</div>
