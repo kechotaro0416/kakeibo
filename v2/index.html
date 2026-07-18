@@ -599,15 +599,11 @@
         接続状態を確認しています…
       </p>
       <div id="cloud-signed-out" style="display:none">
-        <label for="cloud-email">メールアドレス</label>
-        <input type="email" inputmode="email" autocomplete="email" id="cloud-email" placeholder="example@email.com">
-        <button class="btn-sub" id="cloud-login-button" style="margin-top:10px;width:100%" onclick="sendCloudLoginEmail()">6桁のログインコードを送る</button>
-        <div id="cloud-otp-wrap" style="display:none;margin-top:12px">
-          <label for="cloud-otp">メールに届いた6桁コード</label>
-          <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" id="cloud-otp" placeholder="123456">
-          <button class="btn-record" id="cloud-verify-button" style="margin-top:10px;width:100%" onclick="verifyCloudOtp()">コードでログイン</button>
+        <button class="btn-sub" id="cloud-login-button" style="width:100%" onclick="signInWithGoogle()">Googleでログイン</button>
+        <div class="alert-ok" style="margin-top:10px;margin-bottom:0">
+          Googleのパスワードが、のこりんへ共有されることはありません。<br>
+          ホーム画面版では、ホーム画面の「のこりん」を開いてからログインしてください。
         </div>
-        <div class="alert-ok" style="margin-top:10px;margin-bottom:0">パスワードは不要です。メールのリンクからログインすることもできます。</div>
       </div>
       <div id="cloud-signed-in" style="display:none">
         <div id="cloud-user" class="alert-ok" style="margin-bottom:10px"></div>
@@ -696,7 +692,6 @@ let cloudNeedsChoice = false;
 let cloudConflict = false;
 let cloudMessage = '';
 let cloudApplyingRemote = false;
-let cloudPendingEmail = '';
 
 const TYPE_LABEL = { cash:'現金', credit:'クレカ', qr:'QR決済', ic:'交通系IC', point:'ポイント', bank:'銀行', other:'その他' };
 
@@ -964,14 +959,10 @@ function renderCloudStatus() {
     return;
   }
   if (!cloudSession) {
-    status.textContent = cloudMessage || '未ログインです。メールアドレスでログインすると、スマホと他の端末で同じデータを使えます。';
+    status.textContent = cloudMessage || '未ログインです。Googleでログインすると、スマホと他の端末で同じデータを使えます。';
     signedOut.style.display = 'block';
     const loginButton = $('cloud-login-button');
     if (loginButton) loginButton.disabled = cloudAuthBusy;
-    const otpWrap = $('cloud-otp-wrap');
-    if (otpWrap) otpWrap.style.display = cloudPendingEmail ? 'block' : 'none';
-    const verifyButton = $('cloud-verify-button');
-    if (verifyButton) verifyButton.disabled = cloudAuthBusy;
     return;
   }
 
@@ -1046,60 +1037,26 @@ async function initializeCloud() {
   }
 }
 
-async function sendCloudLoginEmail() {
+async function signInWithGoogle() {
   if (!cloudClient || cloudAuthBusy) {
     toast('同期機能の読み込み後にもう一度お試しください');
     return;
   }
-  const email = $('cloud-email').value.trim();
-  if (!email || !email.includes('@')) {
-    toast('メールアドレスを確認してください');
-    return;
-  }
   cloudAuthBusy = true;
-  cloudMessage = 'ログイン用メールを送っています…';
+  cloudMessage = 'Googleのログイン画面を開いています…';
   renderCloudStatus();
   try {
-    const { error } = await cloudClient.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: cloudRedirectUrl(), shouldCreateUser: true },
+    const { error } = await cloudClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: cloudRedirectUrl(),
+        queryParams: { prompt: 'select_account' },
+      },
     });
     if (error) throw error;
-    cloudPendingEmail = email;
-    cloudMessage = 'メールを送りました。6桁コードを入力するか、メールのリンクを開いてください。';
-    toast('ログインコードを送りました ✓');
-    setTimeout(() => $('cloud-otp')?.focus(), 0);
   } catch {
-    cloudMessage = 'メールを送れませんでした。通信状態とアドレスを確認してください。';
-    toast('⚠ ログイン用メールを送れませんでした');
-  } finally {
-    cloudAuthBusy = false;
-    renderCloudStatus();
-  }
-}
-
-async function verifyCloudOtp() {
-  if (!cloudClient || cloudAuthBusy) return;
-  const email = cloudPendingEmail || $('cloud-email').value.trim();
-  const token = $('cloud-otp').value.replace(/\D/g, '');
-  if (!email || token.length !== 6) {
-    toast('メールの6桁コードを確認してください');
-    return;
-  }
-  cloudAuthBusy = true;
-  cloudMessage = 'ログインコードを確認しています…';
-  renderCloudStatus();
-  try {
-    const { data, error } = await cloudClient.auth.verifyOtp({ email, token, type: 'email' });
-    if (error || !data.session) throw error || new Error('session unavailable');
-    cloudSession = data.session;
-    cloudPendingEmail = '';
-    cloudMessage = 'ログインできました。同期状態を確認しています…';
-    toast('ログインしました ✓');
-    autoCloudSync();
-  } catch {
-    cloudMessage = 'コードを確認できませんでした。最新の6桁コードを入力してください。';
-    toast('⚠ ログインコードが違うか、期限が切れています');
+    cloudMessage = 'Googleログインを開始できませんでした。通信状態を確認してください。';
+    toast('⚠ Googleログインを開始できませんでした');
   } finally {
     cloudAuthBusy = false;
     renderCloudStatus();
@@ -2980,6 +2937,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 06:20</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン対応</div>
 </body>
 </html>
