@@ -66,6 +66,17 @@
   .quick-actions { display:flex; gap:8px; margin-bottom:14px; }
   .quick-actions button { flex:1; border:0; border-radius:11px; padding:11px 8px; font-weight:700; cursor:pointer; background:#fff; color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.06); }
   .quick-actions button.primary { background:var(--accent); color:#fff; }
+  .starter-guide { border: 1px solid #cfe5e2; background: #f8fcfb; }
+  .starter-guide h2 { color: var(--accent); margin-bottom: 3px; }
+  .starter-guide .guide-lead { font-size: 13px; color: var(--muted); margin-bottom: 9px; }
+  .guide-step { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .guide-step:first-of-type { border-top: none; }
+  .guide-state { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 800; }
+  .guide-step.done .guide-state { background: var(--ok-bg); color: var(--ok); }
+  .guide-copy { flex: 1; min-width: 0; }
+  .guide-name { font-size: 14px; font-weight: 700; }
+  .guide-note { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .guide-step.done .guide-name, .guide-step.done .guide-note { color: var(--muted); }
   .section-toggle { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
   .section-toggle button { border:0; background:none; color:var(--accent); font-weight:700; cursor:pointer; }
 
@@ -273,6 +284,7 @@
 <main>
   <!-- ホーム -->
   <div class="view" id="view-home">
+    <div class="card starter-guide" id="starter-guide"></div>
     <div class="card hero-card">
       <h2>自由に使えるお金</h2>
       <div class="hero-value" id="free-money-value">—</div>
@@ -452,7 +464,7 @@
         <div><button class="btn-sub" style="width:100%;padding:11px 0" onclick="addCategory('income')">追加</button></div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="balance-settings-card">
       <h2>残高の設定</h2>
       <p style="font-size:13px;color:var(--muted);line-height:1.7">
         管理したい支払い方法（現金・銀行口座・Suica・PayPayなど）の実際の残高を入力すると、
@@ -625,6 +637,7 @@ function renderHome() {
   const bal = income - expense;
   $('sum-balance').textContent = (bal < 0 ? '−' : '') + yen(Math.abs(bal));
   $('sum-balance').className = 'val ' + (bal >= 0 ? 'income' : 'expense');
+  renderStarterGuide();
   renderHero(expense);
 
   renderBalances();
@@ -634,6 +647,32 @@ function renderHome() {
   renderDonut('break-category', groupSum(txs, t => t.category, 'expense'), S.categories.expense);
   renderDonut('break-method', groupSum(txs, t => methodName(t.methodId), 'expense'), S.paymentMethods.map(m => m.name));
   renderDonut('break-income', groupSum(txs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
+}
+
+function renderStarterGuide() {
+  const hasBalance = trackedMethods().some(m => Object.prototype.hasOwnProperty.call(S.balances, m.id));
+  const steps = [
+    { done: hasBalance, name: '残高を入力する', note: '現金や銀行口座の今の金額を入れます', action: '残高を設定', onClick: 'openBalanceSetup()' },
+    { done: S.recurring.some(r => r.active), name: '固定費・定期収入を登録する', note: '家賃・サブスク・給料などを登録します', action: '固定費を登録', onClick: "showView('recurring');openRecForm()" },
+    { done: S.transactions.length > 0, name: '最初の記帳をする', note: '今日の支出や収入を1件入力してみましょう', action: '記帳する', onClick: "showView('entry');focusAmount()" }
+  ];
+  const remaining = steps.filter(s => !s.done).length;
+  const guide = $('starter-guide');
+  if (!remaining) { guide.style.display = 'none'; return; }
+  guide.style.display = '';
+  guide.innerHTML = `
+    <h2>はじめにやること</h2>
+    <div class="guide-lead">あと${remaining}項目で、残高と支払い予定を自動で確認できます。</div>
+    ${steps.map((s, i) => `<div class="guide-step ${s.done ? 'done' : ''}">
+      <div class="guide-state">${s.done ? '✓' : i + 1}</div>
+      <div class="guide-copy"><div class="guide-name">${s.name}</div><div class="guide-note">${s.note}</div></div>
+      ${s.done ? '<span class="chip done">完了</span>' : `<button class="btn-sub" onclick="${s.onClick}">${s.action}</button>`}
+    </div>`).join('')}`;
+}
+
+function openBalanceSetup() {
+  showView('settings');
+  setTimeout(() => $('balance-settings-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
 }
 
 function renderHero(expense) {
@@ -1800,6 +1839,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:28</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:37</div>
 </body>
 </html>
