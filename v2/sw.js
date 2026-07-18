@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nokorin-v2-shell-6';
+const CACHE_NAME = 'nokorin-v2-shell-7';
 const SHELL = ['./', './index.html', './cloud-config.js?v=4', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {

@@ -1062,6 +1062,7 @@ async function initializeCloud() {
   if (oauthReturn) clearCloudOAuthReturn();
   let authEventsReady = false;
   let oauthSessionAttempted = false;
+  let oauthFailureStage = '';
   try {
     await loadSupabaseLibrary();
     const cfg = cloudConfig();
@@ -1097,16 +1098,19 @@ async function initializeCloud() {
       const loginWasStartedHere = consumeCloudLoginPending();
       if (oauthReturn.validTokens && loginWasStartedHere && cloudIsExpectedOAuthReturn()) {
         oauthSessionAttempted = true;
+        oauthFailureStage = 'session';
         const { data: sessionData, error: sessionError } = await cloudClient.auth.setSession({
           access_token: oauthReturn.accessToken,
           refresh_token: oauthReturn.refreshToken,
         });
         if (sessionError || !sessionData.session) throw new Error('oauth session rejected');
 
+        oauthFailureStage = 'user';
         const { data: userData, error: userError } = await cloudClient.auth.getUser(sessionData.session.access_token);
         if (userError || !userData.user || userData.user.id !== sessionData.session.user?.id) {
           throw new Error('oauth user verification failed');
         }
+        oauthFailureStage = '';
         session = sessionData.session;
         cloudMessage = 'ログインを確認しました。同期状態を確認しています…';
       } else if (oauthReturn.hasError) {
@@ -1131,8 +1135,9 @@ async function initializeCloud() {
       catch { /* 不完全な認証状態を使わないことを優先する */ }
       cloudSession = null;
     }
+    const oauthFailureCode = oauthFailureStage === 'session' ? 'S1' : oauthFailureStage === 'user' ? 'U1' : 'C1';
     cloudMessage = oauthReturn
-      ? 'Googleログインを確認できませんでした。もう一度お試しください。端末内のデータは残っています。'
+      ? `Googleログインを確認できませんでした（確認コード ${oauthFailureCode}）。もう一度お試しください。端末内のデータは残っています。`
       : 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
     renderCloudStatus();
   }
@@ -3045,6 +3050,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン修正版</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン診断版</div>
 </body>
 </html>
