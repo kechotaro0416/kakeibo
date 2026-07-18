@@ -593,6 +593,35 @@
         <div><button class="btn-sub" style="width:100%;padding:11px 0" onclick="addSettlementDay()">区切り日を追加</button></div>
       </div>
     </div>
+    <div class="card" id="cloud-card">
+      <h2>クラウド同期</h2>
+      <p id="cloud-status" style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:10px">
+        接続状態を確認しています…
+      </p>
+      <div id="cloud-signed-out" style="display:none">
+        <label for="cloud-email">メールアドレス</label>
+        <input type="email" inputmode="email" autocomplete="email" id="cloud-email" placeholder="example@email.com">
+        <button class="btn-sub" id="cloud-login-button" style="margin-top:10px;width:100%" onclick="sendCloudLoginEmail()">6桁のログインコードを送る</button>
+        <div id="cloud-otp-wrap" style="display:none;margin-top:12px">
+          <label for="cloud-otp">メールに届いた6桁コード</label>
+          <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" id="cloud-otp" placeholder="123456">
+          <button class="btn-record" id="cloud-verify-button" style="margin-top:10px;width:100%" onclick="verifyCloudOtp()">コードでログイン</button>
+        </div>
+        <div class="alert-ok" style="margin-top:10px;margin-bottom:0">パスワードは不要です。メールのリンクからログインすることもできます。</div>
+      </div>
+      <div id="cloud-signed-in" style="display:none">
+        <div id="cloud-user" class="alert-ok" style="margin-bottom:10px"></div>
+        <div id="cloud-first-sync" class="alert" style="display:none;margin-bottom:10px">
+          初回だけ、残したいデータを選んでください。自動では上書きしません。
+        </div>
+        <button class="btn-sub" id="cloud-push-button" style="width:100%" onclick="pushCloudData(true)">この端末のデータをクラウドへ保存</button>
+        <button class="btn-sub" id="cloud-pull-button" style="margin-top:8px;width:100%" onclick="pullCloudData(true)">クラウドのデータをこの端末へ復元</button>
+        <button class="btn-mini" id="cloud-logout-button" style="margin-top:10px;width:100%" onclick="signOutCloud()">ログアウト</button>
+      </div>
+      <div id="cloud-config-warning" class="alert-ok" style="display:none;margin-bottom:0">
+        クラウド同期は準備中です。今は端末内への保存とバックアップをそのまま利用できます。
+      </div>
+    </div>
     <div class="card">
       <h2>データ</h2>
       <p style="font-size:13px;color:var(--muted);line-height:1.7">
@@ -644,6 +673,7 @@
 
 <div id="toast"></div>
 
+<script src="./cloud-config.js"></script>
 <script>
 'use strict';
 
@@ -655,6 +685,18 @@ let entryType = 'expense';
 let editingId = null;               // 編集中の記録ID
 let entryRecurringId = null;        // 固定費からの記帳
 let editingRecId = null;            // 編集中の固定費ID
+let cloudClient = null;
+let cloudSession = null;
+let cloudLibraryPromise = null;
+let cloudSyncTimer = null;
+let cloudSyncRunning = false;
+let cloudSyncQueued = false;
+let cloudAuthBusy = false;
+let cloudNeedsChoice = false;
+let cloudConflict = false;
+let cloudMessage = '';
+let cloudApplyingRemote = false;
+let cloudPendingEmail = '';
 
 const TYPE_LABEL = { cash:'現金', credit:'クレカ', qr:'QR決済', ic:'交通系IC', point:'ポイント', bank:'銀行', other:'その他' };
 
@@ -720,6 +762,11 @@ const STORE_KEY = 'nokorin-data-v2';
 const LEGACY_STORE_KEY = 'kakeibo-data-v1';
 const BACKUP_KEY = 'nokorin-backups-v2';
 const AUTO_BACKUP_DATE_KEY = 'nokorin-last-auto-backup-v2';
+const CLOUD_LINKED_USER_KEY = 'nokorin-cloud-linked-user-v2';
+const CLOUD_HASH_KEY_PREFIX = 'nokorin-cloud-last-hash-v2:';
+const CLOUD_TABLE = 'user_app_data';
+const SUPABASE_CDN_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+const CLOUD_REDIRECT_URL = 'https://kechotaro0416.github.io/kakeibo/v2/';
 const MAX_BACKUPS = 7;
 
 function readBackups() {
@@ -737,19 +784,36 @@ function saveRawBackup(raw, reason) {
     const rows = readBackups();
     if (rows[0]?.raw === raw) return true;
     rows.unshift({ id: String(Date.now()), createdAt: new Date().toISOString(), reason, raw });
-    localStorage.setItem(BACKUP_KEY, JSON.stringify(rows.slice(0, MAX_BACKUPS)));
-    return true;
+    for (let keep = Math.min(MAX_BACKUPS, rows.length); keep >= 1; keep--) {
+      try {
+        localStorage.setItem(BACKUP_KEY, JSON.stringify(rows.slice(0, keep)));
+        return true;
+      } catch {
+        // 容量が少ない端末では古いバックアップから減らして、最低1件の退避を優先する
+      }
+    }
+    return false;
   } catch { return false; }
 }
 
 function persist() {
   try {
+    if (!cloudApplyingRemote) {
+      S.meta = S.meta && typeof S.meta === 'object' ? S.meta : {};
+      S.meta.modifiedAt = new Date().toISOString();
+    }
     const next = JSON.stringify(S);
     const previous = localStorage.getItem(STORE_KEY);
-    if (previous && previous !== next) saveRawBackup(previous, '変更前');
+    if (previous && previous !== next && !saveRawBackup(previous, '変更前')) {
+      toast('⚠ 変更前のバックアップを作れないため保存を中止しました');
+      return false;
+    }
     localStorage.setItem(STORE_KEY, next);
+    if (!cloudApplyingRemote) scheduleCloudPush();
+    return true;
   } catch {
     toast('⚠ 保存に失敗しました（ストレージ容量を確認）');
+    return false;
   }
 }
 
@@ -781,14 +845,554 @@ function renderBackupStatus() {
 async function restoreLocalBackup(id) {
   const backup = readBackups().find(b => b.id === id);
   if (!backup || !await appConfirm(`${backupTimeLabel(backup.createdAt)}の状態に戻しますか？\n現在の状態も先に自動保存します。`)) return;
+  const beforeRaw = JSON.stringify(S);
   try {
-    saveRawBackup(JSON.stringify(S), '復元前');
+    if (!saveRawBackup(beforeRaw, '復元前')) throw new Error('backup failed');
     S = normalizeData(JSON.parse(backup.raw));
-    localStorage.setItem(STORE_KEY, JSON.stringify(S));
+    if (!persist()) throw new Error('save failed');
     resetEntryForm();
     showView('home');
     toast('復元しました ✓');
-  } catch { toast('⚠ 復元できませんでした'); }
+  } catch {
+    try { S = normalizeData(JSON.parse(beforeRaw)); render(); } catch { /* 元の画面を維持 */ }
+    toast('⚠ 復元できませんでした');
+  }
+}
+
+/* ---------- クラウド同期（Supabase） ---------- */
+function cloudConfig() {
+  const cfg = window.NOKORIN_CLOUD_CONFIG || {};
+  return {
+    supabaseUrl: String(cfg.supabaseUrl || '').trim(),
+    publishableKey: String(cfg.publishableKey || '').trim(),
+  };
+}
+
+function cloudIsConfigured() {
+  const cfg = cloudConfig();
+  return Boolean(cfg.supabaseUrl && cfg.publishableKey);
+}
+
+function cloudUserId() { return cloudSession?.user?.id || ''; }
+function cloudHashKey(userId) { return CLOUD_HASH_KEY_PREFIX + userId; }
+
+function cloudLastHash(userId = cloudUserId()) {
+  try { return userId ? localStorage.getItem(cloudHashKey(userId)) || '' : ''; }
+  catch { return ''; }
+}
+
+function cloudIsLinked(userId = cloudUserId()) {
+  try {
+    return Boolean(userId && localStorage.getItem(CLOUD_LINKED_USER_KEY) === userId && cloudLastHash(userId));
+  } catch { return false; }
+}
+
+function rememberCloudSync(userId, hash) {
+  try {
+    localStorage.setItem(CLOUD_LINKED_USER_KEY, userId);
+    localStorage.setItem(cloudHashKey(userId), hash);
+    return true;
+  } catch {
+    toast('⚠ 同期情報を端末に保存できませんでした');
+    return false;
+  }
+}
+
+function cloneAppData(data) {
+  return typeof structuredClone === 'function'
+    ? structuredClone(data)
+    : JSON.parse(JSON.stringify(data));
+}
+
+function canonicalCloudValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalCloudValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((out, key) => {
+      out[key] = canonicalCloudValue(value[key]);
+      return out;
+    }, {});
+  }
+  return value;
+}
+
+async function cloudDataHash(data) {
+  const text = JSON.stringify(canonicalCloudValue(data));
+  if (window.crypto?.subtle && window.TextEncoder) {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  let h1 = 2166136261, h2 = 2246822519;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 16777619);
+    h2 = Math.imul(h2 ^ code, 3266489917);
+  }
+  return `${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function cloudDataSummary(data) {
+  const tx = Array.isArray(data?.transactions) ? data.transactions.length : 0;
+  const rec = Array.isArray(data?.recurring) ? data.recurring.length : 0;
+  return `記録 ${tx}件・固定費 ${rec}件`;
+}
+
+function cloudRedirectUrl() {
+  return location.hostname === 'kechotaro0416.github.io'
+    ? CLOUD_REDIRECT_URL
+    : new URL('./', location.href).href;
+}
+
+function renderCloudStatus() {
+  const status = $('cloud-status');
+  const signedOut = $('cloud-signed-out');
+  const signedIn = $('cloud-signed-in');
+  const warning = $('cloud-config-warning');
+  if (!status || !signedOut || !signedIn || !warning) return;
+
+  signedOut.style.display = 'none';
+  signedIn.style.display = 'none';
+  warning.style.display = 'none';
+
+  if (!cloudIsConfigured()) {
+    status.textContent = 'この端末への保存は有効です。クラウド同期は管理者設定後に利用できます。';
+    warning.style.display = 'block';
+    return;
+  }
+  if (!cloudClient) {
+    status.textContent = cloudMessage || '同期機能を読み込んでいます…';
+    return;
+  }
+  if (!cloudSession) {
+    status.textContent = cloudMessage || '未ログインです。メールアドレスでログインすると、スマホと他の端末で同じデータを使えます。';
+    signedOut.style.display = 'block';
+    const loginButton = $('cloud-login-button');
+    if (loginButton) loginButton.disabled = cloudAuthBusy;
+    const otpWrap = $('cloud-otp-wrap');
+    if (otpWrap) otpWrap.style.display = cloudPendingEmail ? 'block' : 'none';
+    const verifyButton = $('cloud-verify-button');
+    if (verifyButton) verifyButton.disabled = cloudAuthBusy;
+    return;
+  }
+
+  signedIn.style.display = 'block';
+  const linked = cloudIsLinked();
+  $('cloud-user').textContent = `ログイン中: ${cloudSession.user.email || 'メールアドレス確認済み'}`;
+  const choice = $('cloud-first-sync');
+  choice.style.display = cloudNeedsChoice || cloudConflict ? 'block' : 'none';
+  choice.textContent = cloudConflict
+    ? 'この端末とクラウドの両方で変更が見つかりました。自動上書きは停止中です。下のどちらを残すか選んでください。'
+    : '初回だけ、残したいデータを選んでください。自動では上書きしません。';
+  status.textContent = cloudMessage || (linked
+    ? '同期済みです。記帳後は自動でクラウドにも保存されます。'
+    : 'ログインできました。初回同期の確認をしています…');
+  for (const id of ['cloud-push-button', 'cloud-pull-button', 'cloud-logout-button']) {
+    const button = $(id);
+    if (button) button.disabled = cloudSyncRunning || cloudAuthBusy;
+  }
+}
+
+function loadSupabaseLibrary() {
+  if (window.supabase?.createClient) return Promise.resolve();
+  if (cloudLibraryPromise) return cloudLibraryPromise;
+  cloudLibraryPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = SUPABASE_CDN_URL;
+    script.async = true;
+    script.dataset.nokorinSupabase = 'true';
+    script.onload = () => window.supabase?.createClient ? resolve() : reject(new Error('library unavailable'));
+    script.onerror = () => reject(new Error('library load failed'));
+    document.head.appendChild(script);
+  }).catch(error => {
+    cloudLibraryPromise = null;
+    throw error;
+  });
+  return cloudLibraryPromise;
+}
+
+async function initializeCloud() {
+  renderCloudStatus();
+  if (!cloudIsConfigured() || cloudClient) return;
+  try {
+    await loadSupabaseLibrary();
+    const cfg = cloudConfig();
+    cloudClient = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
+    const { data, error } = await cloudClient.auth.getSession();
+    if (error) throw error;
+    cloudSession = data.session;
+    cloudMessage = '';
+    renderCloudStatus();
+    cloudClient.auth.onAuthStateChange((event, session) => {
+      const previousUserId = cloudSession?.user?.id || '';
+      cloudSession = session;
+      const nextUserId = session?.user?.id || '';
+      if (!session || previousUserId !== nextUserId) {
+        cloudNeedsChoice = false;
+        cloudConflict = false;
+      }
+      if (!session) cloudMessage = 'ログアウトしました。端末内のデータは残っています。';
+      else if (previousUserId !== nextUserId) cloudMessage = 'ログインを確認しました。同期状態を確認しています…';
+      renderCloudStatus();
+      if (session && ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
+        setTimeout(() => autoCloudSync(), 0);
+      }
+    });
+    if (cloudSession) autoCloudSync();
+  } catch {
+    cloudMessage = 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
+    renderCloudStatus();
+  }
+}
+
+async function sendCloudLoginEmail() {
+  if (!cloudClient || cloudAuthBusy) {
+    toast('同期機能の読み込み後にもう一度お試しください');
+    return;
+  }
+  const email = $('cloud-email').value.trim();
+  if (!email || !email.includes('@')) {
+    toast('メールアドレスを確認してください');
+    return;
+  }
+  cloudAuthBusy = true;
+  cloudMessage = 'ログイン用メールを送っています…';
+  renderCloudStatus();
+  try {
+    const { error } = await cloudClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: cloudRedirectUrl(), shouldCreateUser: true },
+    });
+    if (error) throw error;
+    cloudPendingEmail = email;
+    cloudMessage = 'メールを送りました。6桁コードを入力するか、メールのリンクを開いてください。';
+    toast('ログインコードを送りました ✓');
+    setTimeout(() => $('cloud-otp')?.focus(), 0);
+  } catch {
+    cloudMessage = 'メールを送れませんでした。通信状態とアドレスを確認してください。';
+    toast('⚠ ログイン用メールを送れませんでした');
+  } finally {
+    cloudAuthBusy = false;
+    renderCloudStatus();
+  }
+}
+
+async function verifyCloudOtp() {
+  if (!cloudClient || cloudAuthBusy) return;
+  const email = cloudPendingEmail || $('cloud-email').value.trim();
+  const token = $('cloud-otp').value.replace(/\D/g, '');
+  if (!email || token.length !== 6) {
+    toast('メールの6桁コードを確認してください');
+    return;
+  }
+  cloudAuthBusy = true;
+  cloudMessage = 'ログインコードを確認しています…';
+  renderCloudStatus();
+  try {
+    const { data, error } = await cloudClient.auth.verifyOtp({ email, token, type: 'email' });
+    if (error || !data.session) throw error || new Error('session unavailable');
+    cloudSession = data.session;
+    cloudPendingEmail = '';
+    cloudMessage = 'ログインできました。同期状態を確認しています…';
+    toast('ログインしました ✓');
+    autoCloudSync();
+  } catch {
+    cloudMessage = 'コードを確認できませんでした。最新の6桁コードを入力してください。';
+    toast('⚠ ログインコードが違うか、期限が切れています');
+  } finally {
+    cloudAuthBusy = false;
+    renderCloudStatus();
+  }
+}
+
+async function signOutCloud() {
+  if (!cloudClient || cloudAuthBusy || cloudSyncRunning) return;
+  cloudAuthBusy = true;
+  renderCloudStatus();
+  try {
+    const { error } = await cloudClient.auth.signOut();
+    if (error) throw error;
+    cloudSession = null;
+    cloudMessage = 'ログアウトしました。端末内のデータは残っています。';
+    toast('ログアウトしました');
+  } catch {
+    toast('⚠ ログアウトできませんでした');
+  } finally {
+    cloudAuthBusy = false;
+    renderCloudStatus();
+  }
+}
+
+function assertCloudUser(expectedUserId) {
+  if (!expectedUserId || cloudUserId() !== expectedUserId) throw new Error('cloud user changed during sync');
+}
+
+async function fetchCloudRow(expectedUserId = cloudUserId()) {
+  assertCloudUser(expectedUserId);
+  if (!cloudClient) throw new Error('not signed in');
+  const { data, error } = await cloudClient
+    .from(CLOUD_TABLE)
+    .select('data, updated_at')
+    .eq('user_id', expectedUserId)
+    .maybeSingle();
+  if (error) throw error;
+  assertCloudUser(expectedUserId);
+  return data;
+}
+
+function validatedCloudData(data) {
+  return normalizeData(cloneAppData(data));
+}
+
+async function uploadCloudSnapshot(snapshot, remoteRow, expectedUserId) {
+  assertCloudUser(expectedUserId);
+  const snapshotHash = await cloudDataHash(snapshot);
+  if (remoteRow?.data) {
+    const safeRemote = validatedCloudData(remoteRow.data);
+    const remoteHash = await cloudDataHash(safeRemote);
+    if (remoteHash !== snapshotHash && !saveRawBackup(JSON.stringify(safeRemote), 'クラウド上書き前')) {
+      throw new Error('remote backup failed');
+    }
+  }
+  assertCloudUser(expectedUserId);
+  if (remoteRow) {
+    const { data, error } = await cloudClient
+      .from(CLOUD_TABLE)
+      .update({ data: snapshot })
+      .eq('user_id', expectedUserId)
+      .eq('updated_at', remoteRow.updated_at)
+      .select('updated_at')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('cloud changed during sync');
+  } else {
+    const { error } = await cloudClient
+      .from(CLOUD_TABLE)
+      .insert({ user_id: expectedUserId, data: snapshot });
+    if (error) throw error;
+  }
+  assertCloudUser(expectedUserId);
+  rememberCloudSync(expectedUserId, snapshotHash);
+  cloudNeedsChoice = false;
+  cloudConflict = false;
+  cloudMessage = `同期済み（${cloudDataSummary(snapshot)}）`;
+
+  const currentHash = await cloudDataHash(S);
+  if (currentHash !== snapshotHash) cloudSyncQueued = true;
+}
+
+async function applyCloudSnapshot(remoteData, expectedLocalHash, expectedStoredRaw, manual, expectedUserId, expectedUpdatedAt) {
+  assertCloudUser(expectedUserId);
+  const remote = validatedCloudData(remoteData);
+  const remoteHash = await cloudDataHash(remote);
+  const latestRow = await fetchCloudRow(expectedUserId);
+  if (!latestRow || latestRow.updated_at !== expectedUpdatedAt) throw new Error('cloud changed during sync');
+  assertCloudUser(expectedUserId);
+  const currentHash = await cloudDataHash(S);
+  let currentStoredRaw;
+  try { currentStoredRaw = localStorage.getItem(STORE_KEY); }
+  catch { throw new Error('local read failed'); }
+  if (currentHash !== expectedLocalHash || currentStoredRaw !== expectedStoredRaw) {
+    throw new Error('local changed during sync');
+  }
+
+  const beforeRaw = JSON.stringify(S);
+  if (!saveRawBackup(beforeRaw, 'クラウド復元前')) throw new Error('local backup failed');
+  const remoteRaw = JSON.stringify(remote);
+  assertCloudUser(expectedUserId);
+  try { localStorage.setItem(STORE_KEY, remoteRaw); }
+  catch { throw new Error('local save failed'); }
+
+  cloudApplyingRemote = true;
+  S = remote;
+  cloudApplyingRemote = false;
+  rememberCloudSync(expectedUserId, remoteHash);
+  cloudNeedsChoice = false;
+  cloudConflict = false;
+  cloudMessage = `同期済み（${cloudDataSummary(remote)}）`;
+  if (manual) {
+    resetEntryForm();
+    showView('home');
+    toast('クラウドのデータを復元しました ✓');
+  } else {
+    render();
+    toast('別の端末の変更を反映しました ✓');
+  }
+}
+
+function beginCloudSync(manual) {
+  if (!cloudClient || !cloudSession) {
+    if (manual) toast('先にクラウドへログインしてください');
+    return false;
+  }
+  if (cloudSyncRunning) {
+    if (manual) toast('同期中です。少し待ってからもう一度お試しください');
+    else cloudSyncQueued = true;
+    return false;
+  }
+  cloudSyncRunning = true;
+  renderCloudStatus();
+  return true;
+}
+
+function endCloudSync() {
+  cloudSyncRunning = false;
+  renderCloudStatus();
+  if (cloudSyncQueued) {
+    cloudSyncQueued = false;
+    setTimeout(() => autoCloudSync(), 0);
+  }
+}
+
+async function pushCloudData(manual = false) {
+  const expectedUserId = cloudUserId();
+  if (!beginCloudSync(manual)) return;
+  try {
+    assertCloudUser(expectedUserId);
+    const snapshot = cloneAppData(S);
+    const snapshotHash = await cloudDataHash(snapshot);
+    const storedRaw = localStorage.getItem(STORE_KEY);
+    const row = await fetchCloudRow(expectedUserId);
+    let remote = null;
+    if (row?.data) remote = validatedCloudData(row.data);
+
+    if (manual && remote) {
+      const remoteHash = await cloudDataHash(remote);
+      if (remoteHash === snapshotHash) {
+        assertCloudUser(expectedUserId);
+        rememberCloudSync(expectedUserId, snapshotHash);
+        cloudNeedsChoice = false;
+        cloudConflict = false;
+        cloudMessage = 'この端末とクラウドは同じ内容です。';
+        toast('すでに同期済みです ✓');
+        return;
+      }
+      const ok = await appConfirm(`この端末のデータ（${cloudDataSummary(snapshot)}）で、クラウド（${cloudDataSummary(remote)}）を上書きしますか？\nクラウド側の内容も先に端末内へバックアップします。`);
+      if (!ok) return;
+      const currentHash = await cloudDataHash(S);
+      if (currentHash !== snapshotHash || localStorage.getItem(STORE_KEY) !== storedRaw) {
+        throw new Error('local changed during confirmation');
+      }
+    }
+
+    await uploadCloudSnapshot(snapshot, row, expectedUserId);
+    if (manual) toast('クラウドへ保存しました ✓');
+  } catch (error) {
+    cloudMessage = error?.message?.includes('changed')
+      ? '確認中に端末のデータが変わったため、上書きを中止しました。もう一度お試しください。'
+      : 'クラウドへ保存できませんでした。端末内のデータは残っています。';
+    if (manual) toast('⚠ クラウドへの保存を中止しました');
+  } finally {
+    endCloudSync();
+  }
+}
+
+async function pullCloudData(manual = false) {
+  const expectedUserId = cloudUserId();
+  if (!beginCloudSync(manual)) return;
+  try {
+    assertCloudUser(expectedUserId);
+    const localHash = await cloudDataHash(S);
+    const storedRaw = localStorage.getItem(STORE_KEY);
+    const row = await fetchCloudRow(expectedUserId);
+    if (!row?.data) {
+      cloudMessage = 'クラウドにはまだデータがありません。この端末のデータを保存してください。';
+      if (manual) toast('クラウドのデータはまだありません');
+      return;
+    }
+    const remote = validatedCloudData(row.data);
+    const remoteHash = await cloudDataHash(remote);
+    if (remoteHash === localHash) {
+      assertCloudUser(expectedUserId);
+      rememberCloudSync(expectedUserId, remoteHash);
+      cloudNeedsChoice = false;
+      cloudConflict = false;
+      cloudMessage = 'この端末とクラウドは同じ内容です。';
+      if (manual) toast('すでに同期済みです ✓');
+      return;
+    }
+    if (manual) {
+      const ok = await appConfirm(`この端末のデータ（${cloudDataSummary(S)}）を、クラウド（${cloudDataSummary(remote)}）で置き換えますか？\n現在の端末データは先に自動バックアップします。`);
+      if (!ok) return;
+    }
+    await applyCloudSnapshot(remote, localHash, storedRaw, manual, expectedUserId, row.updated_at);
+  } catch (error) {
+    cloudMessage = error?.message?.includes('changed')
+      ? '同期中に端末のデータが変わったため、復元を中止しました。もう一度お試しください。'
+      : 'クラウドから復元できませんでした。端末内のデータは変更していません。';
+    if (manual) toast('⚠ クラウドからの復元を中止しました');
+  } finally {
+    endCloudSync();
+  }
+}
+
+async function autoCloudSync() {
+  if (cloudNeedsChoice || cloudConflict) return;
+  const userId = cloudUserId();
+  if (!beginCloudSync(false)) return;
+  try {
+    assertCloudUser(userId);
+    const local = cloneAppData(S);
+    const localHash = await cloudDataHash(local);
+    const storedRaw = localStorage.getItem(STORE_KEY);
+    const row = await fetchCloudRow(userId);
+    if (!row?.data) {
+      if (!cloudIsLinked(userId)) {
+        cloudNeedsChoice = true;
+        cloudMessage = 'クラウドはまだ空です。初回は「この端末のデータをクラウドへ保存」を選んでください。';
+        return;
+      }
+      await uploadCloudSnapshot(local, null, userId);
+      return;
+    }
+    const remote = validatedCloudData(row.data);
+    const remoteHash = await cloudDataHash(remote);
+    if (localHash === remoteHash) {
+      assertCloudUser(userId);
+      rememberCloudSync(userId, localHash);
+      cloudNeedsChoice = false;
+      cloudConflict = false;
+      cloudMessage = `同期済み（${cloudDataSummary(local)}）`;
+      return;
+    }
+
+    const lastHash = cloudLastHash(userId);
+    if (!cloudIsLinked(userId) || !lastHash) {
+      cloudNeedsChoice = true;
+      cloudConflict = false;
+      cloudMessage = 'クラウドにもデータがあります。初回は残したい方を選んでください。';
+      return;
+    }
+
+    const localChanged = localHash !== lastHash;
+    const remoteChanged = remoteHash !== lastHash;
+    if (localChanged && remoteChanged) {
+      cloudConflict = true;
+      cloudNeedsChoice = false;
+      cloudMessage = '両方で変更が見つかったため、自動同期を停止しました。';
+      return;
+    }
+    if (localChanged) await uploadCloudSnapshot(local, row, userId);
+    else if (remoteChanged) await applyCloudSnapshot(remote, localHash, storedRaw, false, userId, row.updated_at);
+    else {
+      cloudConflict = true;
+      cloudMessage = '同期状態を確認できません。残したい方を選んでください。';
+    }
+  } catch (error) {
+    cloudMessage = error?.message?.includes('changed')
+      ? '同期中に別の端末で更新されたため、自動上書きを中止しました。もう一度同期状態を確認します。'
+      : '現在オフライン、またはクラウドへ接続できません。端末内への保存は続いています。';
+    if (error?.message?.includes('changed')) cloudSyncQueued = true;
+  } finally {
+    endCloudSync();
+  }
+}
+
+function scheduleCloudPush() {
+  if (!cloudClient || !cloudSession || !cloudIsLinked() || cloudConflict || cloudNeedsChoice) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => autoCloudSync(), 1200);
 }
 
 /* ---------- 画面切り替え ---------- */
@@ -2121,6 +2725,7 @@ function renderSettings() {
     .filter(d => !used.has(d))
     .map(d => `<option value="${d}">${d}日</option>`).join('');
   renderBackupStatus();
+  renderCloudStatus();
 }
 
 function addMethod() {
@@ -2292,6 +2897,7 @@ if ('serviceWorker' in navigator) {
 
 const DEFAULT_DATA = {
   schemaVersion: 3,
+  meta: { modifiedAt: '1970-01-01T00:00:00.000Z' },
   paymentMethods: [
     { id: 'm_cash',   name: '現金', type: 'cash' },
     { id: 'm_credit', name: 'クレジットカード', type: 'credit' },
@@ -2318,6 +2924,10 @@ const DEFAULT_DATA = {
 function normalizeData(data) {
   if (!data || !Array.isArray(data.transactions) || !Array.isArray(data.paymentMethods)) throw new Error('bad data');
   data.schemaVersion = 3;
+  data.meta = data.meta && typeof data.meta === 'object' ? data.meta : {};
+  if (!data.meta.modifiedAt || Number.isNaN(Date.parse(data.meta.modifiedAt))) {
+    data.meta.modifiedAt = '1970-01-01T00:00:00.000Z';
+  }
   data.recurring = Array.isArray(data.recurring) ? data.recurring : [];
   data.balances = data.balances || {};
   data.settlementDays = Array.isArray(data.settlementDays) && data.settlementDays.length ? data.settlementDays : [10, 27];
@@ -2336,12 +2946,14 @@ function init() {
       const legacy = localStorage.getItem(LEGACY_STORE_KEY);
       if (legacy) {
         S = normalizeData(JSON.parse(legacy));
+        S.meta.modifiedAt = new Date().toISOString();
         raw = JSON.stringify(S);
         localStorage.setItem(STORE_KEY, raw);
         saveRawBackup(raw, '現行版からコピー');
         migrated = true;
       } else {
         S = structuredClone(DEFAULT_DATA);
+        S.meta.modifiedAt = new Date().toISOString();
         localStorage.setItem(STORE_KEY, JSON.stringify(S));
       }
     } else S = normalizeData(JSON.parse(raw));
@@ -2349,9 +2961,12 @@ function init() {
     const latest = readBackups()[0];
     try {
       S = latest ? normalizeData(JSON.parse(latest.raw)) : structuredClone(DEFAULT_DATA);
+      if (!latest) S.meta.modifiedAt = new Date().toISOString();
       recovered = Boolean(latest);
     } catch { S = structuredClone(DEFAULT_DATA); }
   }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+  catch { toast('⚠ 端末への保存を確認してください'); }
   const today = todayStr();
   if (localStorage.getItem(AUTO_BACKUP_DATE_KEY) !== today) {
     saveRawBackup(JSON.stringify(S), '毎日の自動保存');
@@ -2363,7 +2978,8 @@ function init() {
   if (recovered) toast('保存データをバックアップから復旧しました ✓');
 }
 init();
+initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 04:52</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 06:20</div>
 </body>
 </html>
