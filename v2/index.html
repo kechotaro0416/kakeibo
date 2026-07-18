@@ -1098,9 +1098,8 @@ async function initializeCloud() {
       const loginWasStartedHere = consumeCloudLoginPending();
       if (oauthReturn.validTokens && loginWasStartedHere && cloudIsExpectedOAuthReturn()) {
         oauthSessionAttempted = true;
-        oauthFailureStage = 'session';
-        const { data: sessionData, error: sessionError } = await cloudClient.auth.setSession({
-          access_token: oauthReturn.accessToken,
+        oauthFailureStage = 'refresh';
+        const { data: sessionData, error: sessionError } = await cloudClient.auth.refreshSession({
           refresh_token: oauthReturn.refreshToken,
         });
         if (sessionError || !sessionData.session) throw new Error('oauth session rejected');
@@ -1135,7 +1134,7 @@ async function initializeCloud() {
       catch { /* 不完全な認証状態を使わないことを優先する */ }
       cloudSession = null;
     }
-    const oauthFailureCode = oauthFailureStage === 'session' ? 'S1' : oauthFailureStage === 'user' ? 'U1' : 'C1';
+    const oauthFailureCode = oauthFailureStage === 'refresh' ? 'R1' : oauthFailureStage === 'user' ? 'U1' : 'C1';
     cloudMessage = oauthReturn
       ? `Googleログインを確認できませんでした（確認コード ${oauthFailureCode}）。もう一度お試しください。端末内のデータは残っています。`
       : 'クラウドへ接続できません。端末内への記帳とバックアップはそのまま使えます。';
@@ -3050,6 +3049,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン診断版</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 Googleログイン再修正版</div>
 </body>
 </html>
