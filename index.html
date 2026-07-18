@@ -79,6 +79,7 @@
   .guide-step.done .guide-name, .guide-step.done .guide-note { color: var(--muted); }
   .section-toggle { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
   .section-toggle button { border:0; background:none; color:var(--accent); font-weight:700; cursor:pointer; }
+  .collapse-content { display: none; margin-top: 10px; }
 
   /* ホーム: 収支サマリー */
   .summary { display: flex; text-align: center; }
@@ -311,30 +312,28 @@
       </div>
     </div>
     <div class="card">
-      <h2 id="upcoming-title">今後の入出金予定</h2>
-      <div id="upcoming-alerts"></div>
-      <div id="upcoming-list"></div>
+      <div class="section-toggle"><h2 id="upcoming-title">今後の入出金予定</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="upcoming-alerts"></div><div id="upcoming-list"></div></div>
     </div>
     <div class="card">
-      <h2>この月の固定費・支払い予定</h2>
-      <div id="due-alert"></div>
-      <div id="due-list"></div>
+      <div class="section-toggle"><h2>この月の固定費・支払い予定</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="due-alert"></div><div id="due-list"></div></div>
     </div>
     <div class="card" id="credit-bills-card">
-      <h2>クレジットカードの引き落とし</h2>
-      <div id="credit-bills"></div>
+      <div class="section-toggle"><h2>クレジットカードの引き落とし</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="credit-bills"></div></div>
     </div>
     <div class="card">
-      <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
-      <div id="break-category"></div>
+      <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-category"></div></div>
     </div>
     <div class="card">
-      <div class="section-toggle"><h2>支払い方法別支出</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
-      <div id="break-method"></div>
+      <div class="section-toggle"><h2>支払い方法別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-method"></div></div>
     </div>
     <div class="card">
-      <div class="section-toggle"><h2>収入の内訳</h2><button onclick="toggleAnalysis(this)">折りたたむ</button></div>
-      <div id="break-income"></div>
+      <div class="section-toggle"><h2>収入の内訳</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-income"></div></div>
     </div>
   </div>
 
@@ -691,13 +690,13 @@ function renderHero(expense) {
   $('next-plan-value').textContent = plans.length ? `${fmtMD(plans[0].date)} ${yen(plans[0].amount)}` : '予定なし';
 }
 
-function toggleAnalysis(btn) {
+function toggleCard(btn) {
   const card = btn.closest('.card');
-  const body = card.querySelector('.donut-wrap');
+  const body = card.querySelector('.collapse-content');
   if (!body) return;
-  const hidden = body.style.display === 'none';
+  const hidden = getComputedStyle(body).display === 'none';
   body.style.display = hidden ? '' : 'none';
-  btn.textContent = hidden ? '折りたたむ' : '表示する';
+  btn.textContent = hidden ? '閉じる' : '表示する';
 }
 
 function dueItemsForViewMonth() {
@@ -1839,6 +1838,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:37</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:49</div>
 </body>
 </html>
