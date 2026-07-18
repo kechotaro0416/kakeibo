@@ -695,7 +695,7 @@ function toggleCard(btn) {
   const body = card.querySelector('.collapse-content');
   if (!body) return;
   const hidden = getComputedStyle(body).display === 'none';
-  body.style.display = hidden ? '' : 'none';
+  body.style.display = hidden ? 'block' : 'none';
   btn.textContent = hidden ? '閉じる' : '表示する';
 }
 
@@ -1838,6 +1838,6 @@ function init() {
 }
 init();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:49</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 03:55</div>
 </body>
 </html>
