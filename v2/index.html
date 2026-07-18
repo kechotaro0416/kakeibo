@@ -21,6 +21,11 @@
     --line: #e8e6f3;
     --accent: #6c63ff;
     --accent-soft: #eeedff;
+    --pink: #ff7096;
+    --peach: #ffad66;
+    --sun: #ffd166;
+    --mint: #43c6a5;
+    --sky: #55b8f7;
     --income: #15803d;
     --expense: #dc2626;
     --warn-bg: #fef2f2;
@@ -33,12 +38,13 @@
   html { -webkit-text-size-adjust: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    background: var(--bg); color: var(--text);
+    background: linear-gradient(180deg, #f6f3ff 0%, #fff9f3 48%, #f2fbff 100%); color: var(--text);
+    background-attachment: fixed;
     padding-bottom: calc(108px + env(safe-area-inset-bottom));
   }
   header {
     position: sticky; top: 0; z-index: 10;
-    background: var(--accent); color: #fff;
+    background: linear-gradient(110deg, #6257ef 0%, #9168f5 58%, #f26f9d 120%); color: #fff;
     padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
     display: flex; align-items: center; justify-content: space-between;
   }
@@ -60,22 +66,62 @@
   .card {
     background: var(--card); border-radius: var(--radius);
     padding: 14px 16px; margin-bottom: 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    border: 1px solid rgba(95,82,170,.06);
+    box-shadow: 0 5px 16px rgba(83,72,139,.07);
   }
   .card h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
-  .hero-card { position:relative; overflow:hidden; background: linear-gradient(135deg, #6c63ff, #9b6cff); color: #fff; }
-  .hero-illustration { position:absolute; right:12px; top:10px; width:76px; height:76px; opacity:.9; }
+  .hero-card {
+    --hero-a:#6c63ff; --hero-b:#9b6cff; --face:#ffd166; --face-inner:#fff3c4; --face-ink:#5b4bb7;
+    position:relative; overflow:hidden; color:#fff;
+    background:linear-gradient(135deg,var(--hero-a),var(--hero-b));
+    transition:background .35s ease;
+  }
+  .hero-card::before, .hero-card::after { content:""; position:absolute; border-radius:50%; background:rgba(255,255,255,.09); pointer-events:none; }
+  .hero-card::before { width:160px; height:160px; right:-76px; top:-78px; }
+  .hero-card::after { width:92px; height:92px; left:-48px; bottom:-48px; }
+  .hero-card.mood-unknown { --hero-a:#7468d8; --hero-b:#aa83dc; --face:#d9d2ff; --face-inner:#f3f0ff; --face-ink:#6658a8; }
+  .hero-card.mood-great { --hero-a:#5f5ce2; --hero-b:#28b99d; --face:#ffd75e; --face-inner:#fff1a8; --face-ink:#6d57a3; }
+  .hero-card.mood-good { --hero-a:#6876e8; --hero-b:#50b9e9; --face:#91e5c9; --face-inner:#d8fff2; --face-ink:#365f83; }
+  .hero-card.mood-careful { --hero-a:#f08a5d; --hero-b:#e76f91; --face:#ffc078; --face-inner:#ffe2ba; --face-ink:#924f61; }
+  .hero-card.mood-tight { --hero-a:#e56b6f; --hero-b:#ad5c9d; --face:#ff9a8f; --face-inner:#ffd0ca; --face-ink:#823c67; }
+  .hero-card.mood-danger { --hero-a:#845ec2; --hero-b:#d65d7a; --face:#92c9e8; --face-inner:#d9f2ff; --face-ink:#4d4f82; }
+  .hero-copy { min-height:94px; padding-right:94px; position:relative; z-index:1; }
+  .nokorin-mascot { position:absolute; right:8px; top:8px; width:94px; height:112px; z-index:2; text-align:center; }
+  .nokorin-mascot svg { width:88px; height:88px; overflow:visible; filter:drop-shadow(0 6px 7px rgba(43,36,92,.18)); animation:nokorinFloat 3.2s ease-in-out infinite; }
+  .mascot-ring { fill:var(--face); transition:fill .35s ease; }
+  .mascot-face { fill:var(--face-inner); transition:fill .35s ease; }
+  .mascot-ink { fill:none; stroke:var(--face-ink); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+  .mascot-eye-dot { fill:var(--face-ink); }
+  .mascot-blush { fill:#ff7f9f; opacity:.46; }
+  .mascot-rays { fill:none; stroke:#fff; stroke-width:3; stroke-linecap:round; opacity:.82; }
+  .face-eyes, .face-mouth { display:none; }
+  .mood-great .eyes-happy, .mood-great .mouth-big-smile,
+  .mood-good .eyes-open, .mood-good .mouth-smile,
+  .mood-careful .eyes-open, .mood-careful .mouth-flat,
+  .mood-tight .eyes-worried, .mood-tight .mouth-small-sad,
+  .mood-danger .eyes-worried, .mood-danger .mouth-sad,
+  .mood-unknown .eyes-sleepy, .mood-unknown .mouth-flat { display:block; }
+  .mood-good .mascot-rays, .mood-careful .mascot-rays, .mood-tight .mascot-rays, .mood-danger .mascot-rays, .mood-unknown .mascot-rays { opacity:.22; }
+  .mood-careful .mascot-blush, .mood-tight .mascot-blush, .mood-danger .mascot-blush, .mood-unknown .mascot-blush { opacity:0; }
+  .mood-badge { display:inline-block; transform:translateY(-4px); padding:3px 8px; border-radius:999px; background:rgba(255,255,255,.92); color:var(--face-ink); font-size:10px; font-weight:850; white-space:nowrap; box-shadow:0 3px 8px rgba(43,36,92,.12); }
+  .nokorin-mascot.celebrate svg { animation:nokorinPop .65s ease; }
   .hero-card h2, .hero-card .hero-note { color: rgba(255,255,255,.78); }
   .hero-value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .hero-note { font-size: 12px; margin-top: 4px; position:relative; z-index:1; }
   .hero-cheer { display:inline-block; margin-top:10px; padding:4px 9px; border-radius:999px; background:rgba(255,255,255,.18); color:#fff; font-size:12px; font-weight:700; position:relative; z-index:1; }
+  .mood-meter { margin-top:12px; padding:8px 10px; border-radius:11px; background:rgba(255,255,255,.12); position:relative; z-index:1; }
+  .mood-meter-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10.5px; color:rgba(255,255,255,.78); }
+  .mood-meter-head strong { color:#fff; font-size:11px; }
+  .mood-track { height:6px; margin-top:6px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.17); }
+  .mood-track span { display:block; width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,#fff3a8,#fff); box-shadow:0 0 8px rgba(255,255,255,.45); transition:width .45s ease; }
   .hero-meta { display:flex; gap:8px; margin-top:14px; }
   .hero-meta > div { flex:1; background:rgba(255,255,255,.13); border-radius:10px; padding:8px 10px; }
   .hero-meta .label { color:rgba(255,255,255,.72); font-size:11px; }
   .hero-meta .value { font-size:15px; font-weight:700; margin-top:2px; }
   .quick-actions { display:flex; gap:8px; margin-bottom:14px; }
-  .quick-actions button { flex:1; border:0; border-radius:11px; padding:11px 8px; font-weight:700; cursor:pointer; background:#fff; color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.06); }
-  .quick-actions button.primary { background:var(--accent); color:#fff; }
+  .quick-actions button { flex:1; border:1px solid #ded9ff; border-radius:11px; padding:11px 8px; font-weight:750; cursor:pointer; background:linear-gradient(135deg,#fff,#f2efff); color:var(--accent); box-shadow:0 3px 10px rgba(77,65,143,.08); transition:transform .15s ease; }
+  .quick-actions button.primary { border:0; background:linear-gradient(135deg,#6c63ff,#9a65ee 60%,#ef75a5); color:#fff; }
+  .quick-actions button:active, .student-tool:active { transform:scale(.97); }
   .quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .quick-entry { border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:10px; text-align:left; cursor:pointer; }
   .quick-entry .qname { display:block; font-size:13px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -86,8 +132,14 @@
   .forecast-row:first-child { border-top:0; }
   .forecast-row span:first-child { flex:1; color:var(--muted); }
   .forecast-row strong { font-variant-numeric:tabular-nums; }
-  .student-tool { display:flex; align-items:center; gap:9px; border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:11px; text-align:left; cursor:pointer; font-weight:750; }
+  .student-tool { display:flex; align-items:center; gap:9px; border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:11px; text-align:left; cursor:pointer; font-weight:750; transition:transform .15s ease; }
   .student-tool .tool-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:10px; background:var(--accent-soft); color:var(--accent); font-size:16px; }
+  .student-tool:nth-child(1) { background:#fff9e9; border-color:#ffe4a3; }
+  .student-tool:nth-child(1) .tool-icon { background:#ffe9ad; color:#9a6300; }
+  .student-tool:nth-child(2) { background:#edfbf7; border-color:#bcecdf; }
+  .student-tool:nth-child(2) .tool-icon { background:#c9f2e7; color:#137b64; }
+  .student-tool:nth-child(3) { background:#fff0f5; border-color:#ffcbdc; }
+  .student-tool:nth-child(3) .tool-icon { background:#ffd6e4; color:#a63d66; }
   .student-result { margin-top:12px; border-radius:12px; padding:12px; background:var(--accent-soft); color:var(--accent); font-weight:800; text-align:center; }
   .wage-note { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.55; }
   .wage-helper { margin-top:12px; padding:0 12px 12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
@@ -110,10 +162,22 @@
   .section-toggle { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
   .section-toggle button { border:0; background:none; color:var(--accent); font-weight:700; cursor:pointer; }
   .collapse-content { display: none; margin-top: 10px; }
+  #view-home > .card:not(.hero-card):not(.starter-guide) { border-top:3px solid var(--section-color,#9b7cf4); }
+  #view-home > .card:not(.hero-card):not(.starter-guide) h2::before { content:""; display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:50%; background:var(--section-color,#9b7cf4); }
+  #view-home > .card:nth-of-type(4n+1) { --section-color:#f0789d; }
+  #view-home > .card:nth-of-type(4n+2) { --section-color:#5dbbdf; }
+  #view-home > .card:nth-of-type(4n+3) { --section-color:#43bfa1; }
+  #view-home > .card:nth-of-type(4n) { --section-color:#f1a642; }
+
+  @keyframes nokorinFloat { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-4px) rotate(2deg)} }
+  @keyframes nokorinPop { 0%{transform:scale(1)} 35%{transform:scale(1.18) rotate(-7deg)} 65%{transform:scale(.94) rotate(5deg)} 100%{transform:scale(1)} }
 
   /* ホーム: 収支サマリー */
   .summary { display: flex; text-align: center; }
-  .summary > div { flex: 1; }
+  .summary > div { flex:1; margin:0 3px; padding:9px 4px; border-radius:11px; background:#f7f5ff; }
+  .summary > div:nth-child(1) { background:#edfbf4; }
+  .summary > div:nth-child(2) { background:#fff1f3; }
+  .summary > div:nth-child(3) { background:#f1f4ff; }
   .summary .label { font-size: 12px; color: var(--muted); }
   .summary .val { font-size: 18px; font-weight: 700; margin-top: 2px; }
   .val.income { color: var(--income); }
@@ -159,7 +223,7 @@
   .bal-row .bval.minus { color: var(--expense); }
   .free-row {
     display: flex; align-items: center; gap: 10px;
-    background: var(--accent-soft); border-radius: 10px;
+    background: linear-gradient(135deg,#eeedff,#eafaf5); border-radius: 10px;
     padding: 10px 12px; margin-top: 10px;
   }
   .free-row .fname { flex: 1; font-weight: 700; font-size: 14px; color: var(--accent); }
@@ -299,8 +363,14 @@
     .row2 { flex-direction:column; gap:0; }
     .history-tools { gap:6px; }
     .hero-value { font-size:26px; }
+    .hero-copy { padding-right:88px; }
+    .nokorin-mascot { right:4px; transform:scale(.94); transform-origin:top right; }
     .tx .method { max-width:92px; overflow:hidden; text-overflow:ellipsis; }
     .tx-actions button { padding:6px 3px; font-size:11px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nokorin-mascot svg, .nokorin-mascot.celebrate svg { animation:none; }
+    .mood-track span { transition:none; }
   }
 </style>
 </head>
@@ -319,18 +389,36 @@
   <!-- ホーム -->
   <div class="view" id="view-home">
     <div class="card starter-guide" id="starter-guide"></div>
-    <div class="card hero-card">
-      <svg class="hero-illustration" viewBox="0 0 96 96" aria-hidden="true">
-        <circle cx="48" cy="48" r="31" fill="#ffd166"/>
-        <circle cx="48" cy="48" r="23" fill="#fff3c4"/>
-        <circle cx="40" cy="45" r="2.5" fill="#6c63ff"/><circle cx="56" cy="45" r="2.5" fill="#6c63ff"/>
-        <path d="M40 54c2.5 3 5.2 4.4 8 4.4s5.5-1.4 8-4.4" fill="none" stroke="#6c63ff" stroke-width="3" stroke-linecap="round"/>
-        <path d="M19 30l4 3m51-3l-4 3m-51 34l4-3m51 3l-4-3" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-      </svg>
-      <h2>今月、あと</h2>
-      <div class="hero-value" id="free-money-value">—</div>
-      <div class="hero-note" id="free-money-note">残高を入れると、のこりんが使える額を予報します</div>
-      <div class="hero-cheer" id="hero-cheer">まずは残高を入力しよう</div>
+    <div class="card hero-card mood-unknown" id="home-hero-card">
+      <div class="nokorin-mascot" id="nokorin-mascot" role="img" aria-label="おやすみ中ののこりん">
+        <svg viewBox="0 0 96 96" aria-hidden="true">
+          <g class="mascot-rays"><path d="M18 26l5 4M78 26l-5 4M16 66l6-3M80 66l-6-3M48 11v7"/></g>
+          <circle class="mascot-ring" cx="48" cy="48" r="33"/>
+          <circle class="mascot-face" cx="48" cy="48" r="25"/>
+          <g class="face-eyes eyes-open"><circle class="mascot-eye-dot" cx="39" cy="45" r="2.7"/><circle class="mascot-eye-dot" cx="57" cy="45" r="2.7"/></g>
+          <g class="face-eyes eyes-happy mascot-ink"><path d="M35 46q4-5 8 0M53 46q4-5 8 0"/></g>
+          <g class="face-eyes eyes-worried mascot-ink"><path d="M35 43l7-2M54 41l7 2"/><circle class="mascot-eye-dot" cx="39" cy="47" r="2.4"/><circle class="mascot-eye-dot" cx="57" cy="47" r="2.4"/></g>
+          <g class="face-eyes eyes-sleepy mascot-ink"><path d="M35 46h8M53 46h8"/></g>
+          <circle class="mascot-blush" cx="34" cy="53" r="4"/><circle class="mascot-blush" cx="62" cy="53" r="4"/>
+          <path class="face-mouth mouth-big-smile mascot-ink" d="M36 54q12 15 24 0"/>
+          <path class="face-mouth mouth-smile mascot-ink" d="M40 55q8 8 16 0"/>
+          <path class="face-mouth mouth-flat mascot-ink" d="M42 58h12"/>
+          <path class="face-mouth mouth-small-sad mascot-ink" d="M42 61q6-6 12 0"/>
+          <path class="face-mouth mouth-sad mascot-ink" d="M39 63q9-10 18 0"/>
+          <path d="M35 29q7-7 14-5" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".65"/>
+        </svg>
+        <span class="mood-badge" id="nokorin-mood-label">おやすみ中</span>
+      </div>
+      <div class="hero-copy">
+        <h2>今月、あと</h2>
+        <div class="hero-value" id="free-money-value">—</div>
+        <div class="hero-note" id="free-money-note">残高を入れると、のこりんが使える額を予報します</div>
+        <div class="hero-cheer" id="hero-cheer">残高を教えてくれたら、一緒に考えるよ</div>
+      </div>
+      <div class="mood-meter">
+        <div class="mood-meter-head"><span id="nokorin-log-count">今月0回記帳</span><strong id="nokorin-energy-label">元気チャージ中</strong></div>
+        <div class="mood-track"><span id="nokorin-energy-bar"></span></div>
+      </div>
       <div class="hero-meta">
         <div><div class="label">次の予定</div><div class="value" id="next-plan-value">—</div></div>
         <div><div class="label">今月の支出</div><div class="value" id="hero-expense-value">¥0</div></div>
@@ -719,8 +807,8 @@ let cloudApplyingRemote = false;
 const TYPE_LABEL = { cash:'現金', credit:'クレカ', qr:'QR決済', ic:'交通系IC', point:'ポイント', bank:'銀行', other:'その他' };
 
 // 色覚多様性検証済みのカテゴリカルパレット（8色）。9項目以上は「その他」に集約
-const PALETTE = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834'];
-const FOLD_COLOR = '#898781';
+const PALETTE = ['#6c63ff', '#43c6a5', '#ffad45', '#55b8f7', '#f46f91', '#9b6cff', '#e8c43f', '#ef7b45'];
+const FOLD_COLOR = '#8d8ab0';
 const FOLD_NAME = 'その他（まとめ）';
 
 const $ = id => document.getElementById(id);
@@ -1591,15 +1679,67 @@ function openBalanceSetup() {
   setTimeout(() => $('balance-settings-card').scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
 }
 
+const NOKORIN_MOOD_CLASSES = ['mood-unknown', 'mood-great', 'mood-good', 'mood-careful', 'mood-tight', 'mood-danger'];
+
+function nokorinMoodFor(free, daily) {
+  if (free < 0) return {
+    key:'danger', label:'青ざめ中', energy:8, energyLabel:'しょんぼり', theme:'#845ec2',
+    message:'青ざめ中。支払い予定を1つ確認しよう'
+  };
+  if (daily < 500) return {
+    key:'tight', label:'ドキドキ', energy:28, energyLabel:'節約モード', theme:'#e56b6f',
+    message:'少しドキドキ。使う前に確認しよう'
+  };
+  if (daily < 1000) return {
+    key:'careful', label:'しんちょう', energy:50, energyLabel:'慎重モード', theme:'#f08a5d',
+    message:'慎重モード。小さな出費も記帳しよう'
+  };
+  if (daily < 2000) return {
+    key:'good', label:'いい調子', energy:73, energyLabel:'にこにこ', theme:'#6876e8',
+    message:'いいペース！この調子でいこう'
+  };
+  return {
+    key:'great', label:'ごきげん', energy:95, energyLabel:'ごきげん', theme:'#28a98f',
+    message:'ごきげん！少し貯金にも回せそう'
+  };
+}
+
+function applyNokorinMood(mood) {
+  const hero = $('home-hero-card');
+  if (!hero) return;
+  hero.classList.remove(...NOKORIN_MOOD_CLASSES);
+  hero.classList.add(`mood-${mood.key}`);
+  $('nokorin-mood-label').textContent = mood.label;
+  $('nokorin-energy-label').textContent = mood.energyLabel;
+  $('nokorin-energy-bar').style.width = `${mood.energy}%`;
+  $('hero-cheer').textContent = mood.message;
+  $('nokorin-mascot').setAttribute('aria-label', `${mood.label}ののこりん。${mood.message}`);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mood.theme);
+}
+
+function celebrateNokorin() {
+  const mascot = $('nokorin-mascot');
+  if (!mascot) return;
+  mascot.classList.remove('celebrate');
+  void mascot.offsetWidth;
+  mascot.classList.add('celebrate');
+  setTimeout(() => mascot.classList.remove('celebrate'), 700);
+}
+
 function renderHero(expense) {
   const rows = trackedMethods().filter(m => S.balances[m.id]);
   const ids = new Set(rows.filter(m => m.type === 'cash' || m.type === 'bank').map(m => m.id));
+  const recordCount = new Set(txInViewMonth().map(t => t.splitId || t.id)).size;
+  $('nokorin-log-count').textContent = `この月${recordCount}回記帳`;
   if (!ids.size) {
     $('free-money-value').textContent = '—';
     $('free-money-note').textContent = '残高を入れると、のこりんが使える額を予報します';
-    $('hero-cheer').textContent = 'まずは残高を入力しよう';
     $('daily-budget-value').textContent = '—';
     $('forecast-detail-card').style.display = 'none';
+    applyNokorinMood({
+      key:'unknown', label:'おやすみ中', energy:12, energyLabel:'元気チャージ中', theme:'#7468d8',
+      message:'残高を教えてくれたら、一緒に考えるよ'
+    });
   } else {
     const free = freeMoneyFrom(todayStr(), ids);
     const daysLeft = Math.max(1, Math.round((new Date(free.horizon + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000));
@@ -1607,7 +1747,7 @@ function renderHero(expense) {
     $('free-money-value').textContent = `${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}`;
     $('free-money-note').textContent = `${fmtMD(free.horizon)}まで、つかってOKの目安`;
     $('daily-budget-value').textContent = free.free >= 0 ? yen(daily) : '¥0';
-    $('hero-cheer').textContent = free.free < 0 ? '節約モード。予定を見直そう' : daily >= 2000 ? '余裕！この調子でいこう' : daily >= 1000 ? 'いいペース。予定も確認しよう' : 'ちょい注意、使いすぎに気をつけよう';
+    applyNokorinMood(nokorinMoodFor(free.free, daily));
     renderForecastBreakdown(rows, ids, free, daysLeft);
   }
   $('hero-expense-value').textContent = yen(expense);
@@ -2353,6 +2493,7 @@ function focusAmount() {
 }
 
 function saveEntry() {
+  const isNewEntry = !editingId;
   const amount = Math.round(Number($('f-amount').value));
   if (!amount || amount <= 0) { toast('金額を入力してください'); return; }
   if (!$('f-date').value) { toast('日付を入力してください'); return; }
@@ -2400,6 +2541,7 @@ function saveEntry() {
   resetEntryForm();
   view = { y: Number(base.date.slice(0, 4)), m: Number(base.date.slice(5, 7)) };
   showView('home');
+  if (isNewEntry) celebrateNokorin();
 }
 
 function editTx(id) {
@@ -3207,6 +3349,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 深夜給料・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 表情・カラー・クラウド同期対応</div>
 </body>
 </html>
