@@ -451,32 +451,24 @@
       <button class="primary" onclick="showView('entry'); focusAmount()">＋ 今日の出費を記録</button>
       <button onclick="showView('history')">記録をみる</button>
     </div>
+    <div class="card" id="quick-entry-card" style="display:none">
+      <h2>いつもの記帳</h2>
+      <div class="quick-grid" id="quick-entry-list"></div>
+    </div>
+    <div class="card">
+      <h2>いまのお金</h2>
+      <div id="balance-list"></div>
+    </div>
+    <div class="card" id="forecast-detail-card" style="display:none">
+      <div class="section-toggle"><h2>この金額になる理由</h2><button onclick="toggleCard(this)">内訳を見る</button></div>
+      <div class="collapse-content" id="forecast-breakdown"></div>
+    </div>
     <div class="card credit-live-card" id="credit-collecting-card" style="display:none">
       <div class="credit-live-head">
         <div><h2>カード集計中 <span class="count-badge warn" id="credit-collecting-badge"></span></h2><div class="credit-live-lead">まだ確定していない今回の利用分</div></div>
       </div>
       <div class="credit-tabs" id="credit-collecting-tabs" role="tablist" aria-label="クレジットカードの切り替え"></div>
       <div id="credit-collecting-detail"></div>
-    </div>
-    <div class="card" id="quick-entry-card" style="display:none">
-      <h2>いつもの記帳</h2>
-      <div class="quick-grid" id="quick-entry-list"></div>
-    </div>
-    <div class="card" id="forecast-detail-card" style="display:none">
-      <div class="section-toggle"><h2>この金額になる理由</h2><button onclick="toggleCard(this)">内訳を見る</button></div>
-      <div class="collapse-content" id="forecast-breakdown"></div>
-    </div>
-    <div class="card">
-      <h2>大学生活ツール</h2>
-      <div class="quick-grid">
-        <button class="student-tool" onclick="showStudentTool('student-wage-card')"><span class="tool-icon">¥</span><span>バイト代<br><small style="color:var(--muted)">給料を予測</small></span></button>
-        <button class="student-tool" onclick="showStudentTool('student-loan-card')"><span class="tool-icon">⇄</span><span>割り勘・立替<br><small style="color:var(--muted)">返金を管理</small></span></button>
-        <button class="student-tool" onclick="showStudentTool('student-goal-card')"><span class="tool-icon">○</span><span>貯金目標<br><small style="color:var(--muted)">旅行や学費</small></span></button>
-      </div>
-    </div>
-    <div class="card">
-      <h2>いまのお金</h2>
-      <div id="balance-list"></div>
     </div>
     <div class="card">
       <h2>今月のお金の動き</h2>
@@ -493,6 +485,14 @@
     <div class="card">
       <div class="section-toggle"><h2>この月の固定費・支払い予定 <span class="count-badge" id="due-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
       <div class="collapse-content"><div id="due-alert"></div><div id="due-list"></div></div>
+    </div>
+    <div class="card">
+      <h2>大学生活ツール</h2>
+      <div class="quick-grid">
+        <button class="student-tool" onclick="showStudentTool('student-wage-card')"><span class="tool-icon">¥</span><span>バイト代<br><small style="color:var(--muted)">給料を予測</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-loan-card')"><span class="tool-icon">⇄</span><span>割り勘・立替<br><small style="color:var(--muted)">返金を管理</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-goal-card')"><span class="tool-icon">○</span><span>貯金目標<br><small style="color:var(--muted)">旅行や学費</small></span></button>
+      </div>
     </div>
     <div class="card" id="credit-bills-card">
       <div class="section-toggle"><h2>クレジットカードの引き落とし</h2><button onclick="toggleCard(this)">表示する</button></div>
