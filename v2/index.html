@@ -122,6 +122,28 @@
   .quick-actions button { flex:1; border:1px solid #ded9ff; border-radius:11px; padding:11px 8px; font-weight:750; cursor:pointer; background:linear-gradient(135deg,#fff,#f2efff); color:var(--accent); box-shadow:0 3px 10px rgba(77,65,143,.08); transition:transform .15s ease; }
   .quick-actions button.primary { border:0; background:linear-gradient(135deg,#6c63ff,#9a65ee 60%,#ef75a5); color:#fff; }
   .quick-actions button:active, .student-tool:active { transform:scale(.97); }
+  .credit-live-card { --section-color:#f0789d; background:linear-gradient(145deg,#fff 45%,#fff1f6); overflow:hidden; }
+  .credit-live-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .credit-live-head h2 { margin:0; }
+  .credit-live-lead { color:var(--muted); font-size:11px; margin-top:3px; }
+  .credit-tabs { display:flex; gap:7px; overflow-x:auto; padding:1px 1px 9px; scrollbar-width:none; }
+  .credit-tabs::-webkit-scrollbar { display:none; }
+  .credit-tab { flex:0 0 auto; max-width:180px; border:1px solid #f3cad8; border-radius:999px; background:#fff; color:#885267; padding:7px 11px; font-size:12px; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+  .credit-tab.active { border-color:transparent; background:linear-gradient(135deg,#ec719b,#a76ae8); color:#fff; box-shadow:0 5px 12px rgba(196,91,139,.2); }
+  .credit-live-panel { border:1px solid #f4d5df; border-radius:14px; padding:13px; background:rgba(255,255,255,.86); }
+  .credit-live-main { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; }
+  .credit-live-label { color:var(--muted); font-size:11px; }
+  .credit-live-amount { margin-top:2px; color:#a73f68; font-size:27px; font-weight:850; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .credit-live-days { flex-shrink:0; border-radius:999px; padding:5px 9px; background:#fff0f5; color:#b64b73; font-size:11px; font-weight:800; }
+  .credit-cycle-track { height:7px; margin-top:11px; overflow:hidden; border-radius:999px; background:#f4e5ea; }
+  .credit-cycle-track span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#ff98b9,#a76ae8); }
+  .credit-live-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-top:10px; }
+  .credit-live-stat { min-width:0; border-radius:10px; padding:8px; background:#fff7fa; }
+  .credit-live-stat span { display:block; color:var(--muted); font-size:10px; }
+  .credit-live-stat strong { display:block; margin-top:2px; color:var(--text); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .credit-live-note { margin-top:9px; color:var(--muted); font-size:11px; line-height:1.5; }
+  .credit-setup { text-align:center; padding:6px 2px 2px; color:var(--muted); font-size:12px; line-height:1.6; }
+  .credit-setup .btn-sub { margin-top:9px; }
   .quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .quick-entry { border:1px solid var(--line); background:#fff; color:var(--text); border-radius:12px; padding:10px; text-align:left; cursor:pointer; }
   .quick-entry .qname { display:block; font-size:13px; font-weight:750; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -429,6 +451,13 @@
       <button class="primary" onclick="showView('entry'); focusAmount()">＋ 今日の出費を記録</button>
       <button onclick="showView('history')">記録をみる</button>
     </div>
+    <div class="card credit-live-card" id="credit-collecting-card" style="display:none">
+      <div class="credit-live-head">
+        <div><h2>カード集計中 <span class="count-badge warn" id="credit-collecting-badge"></span></h2><div class="credit-live-lead">まだ確定していない今回の利用分</div></div>
+      </div>
+      <div class="credit-tabs" id="credit-collecting-tabs" role="tablist" aria-label="クレジットカードの切り替え"></div>
+      <div id="credit-collecting-detail"></div>
+    </div>
     <div class="card" id="quick-entry-card" style="display:none">
       <h2>いつもの記帳</h2>
       <div class="quick-grid" id="quick-entry-list"></div>
@@ -647,7 +676,7 @@
 
   <!-- 設定 -->
   <div class="view" id="view-settings">
-    <div class="card">
+    <div class="card" id="payment-settings-card">
       <h2>支払い方法</h2>
       <div id="method-list"></div>
       <div class="row2" style="margin-top:12px">
@@ -788,6 +817,7 @@ let S = null;                       // 全データ
 const now = new Date();
 let view = { y: now.getFullYear(), m: now.getMonth() + 1 };  // 表示中の月
 let currentView = 'home';
+let selectedCollectingCardId = null;
 let entryType = 'expense';
 let editingId = null;               // 編集中の記録ID
 let entryRecurringId = null;        // 固定費からの記帳
@@ -2000,6 +2030,27 @@ function billFor(method, py, pm) {
   return { start, end, payDate: clampDate(py, pm, b.payDay), amount, settled: end < todayStr() };
 }
 
+// 今まさに集計中の1回分を、表示月ではなく今日基準で計算
+function collectingBillFor(method) {
+  if (!method.billing) return null;
+  const today = todayStr();
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const closingThisMonth = clampDate(y, m, method.billing.closingDay);
+  const [cy, cm] = today <= closingThisMonth ? [y, m] : shiftYM(y, m, 1);
+  const [py, pm] = shiftYM(cy, cm, method.billing.payMonthOffset);
+  const bill = billFor(method, py, pm);
+  const uses = S.transactions.filter(t =>
+    (t.type === 'expense' || t.type === 'transfer') &&
+    t.methodId === method.id && t.date >= bill.start && t.date <= today
+  );
+  return { ...bill, amount: uses.reduce((sum, t) => sum + t.amount, 0), count: uses.length };
+}
+
+function dateDistance(from, to) {
+  return Math.round((new Date(to + 'T00:00:00') - new Date(from + 'T00:00:00')) / 86400000);
+}
+
 /* ---------- 残高と今後の支払い予定 ---------- */
 function trackedMethods() { return S.paymentMethods.filter(m => m.type !== 'credit'); }
 function debitMethodId() {
@@ -2241,6 +2292,7 @@ async function setBalance(id) {
 function renderCreditBills() {
   const cards = S.paymentMethods.filter(m => m.type === 'credit');
   const wrap = $('credit-bills-card');
+  renderCollectingCards(cards);
   if (!cards.length) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   let html = '';
@@ -2271,6 +2323,67 @@ function renderCreditBills() {
     }
   }
   $('credit-bills').innerHTML = html;
+}
+
+function selectCollectingCard(id) {
+  selectedCollectingCardId = id;
+  renderCollectingCards(S.paymentMethods.filter(m => m.type === 'credit'));
+}
+
+function openCreditSettings(id) {
+  editingBillingId = id;
+  showView('settings');
+  setTimeout(() => $('payment-settings-card')?.scrollIntoView({ behavior:'smooth', block:'start' }), 0);
+}
+
+function renderCollectingCards(cards) {
+  const wrap = $('credit-collecting-card');
+  if (!cards.length) {
+    wrap.style.display = 'none';
+    selectedCollectingCardId = null;
+    return;
+  }
+  wrap.style.display = '';
+  if (!cards.some(c => c.id === selectedCollectingCardId)) {
+    selectedCollectingCardId = (cards.find(c => c.billing) || cards[0]).id;
+  }
+  $('credit-collecting-badge').textContent = cards.length;
+  $('credit-collecting-tabs').innerHTML = cards.map(c => {
+    const active = c.id === selectedCollectingCardId;
+    return `<button class="credit-tab ${active ? 'active' : ''}" role="tab" aria-selected="${active}" onclick="selectCollectingCard('${c.id}')">${esc(c.name)}</button>`;
+  }).join('');
+
+  const card = cards.find(c => c.id === selectedCollectingCardId) || cards[0];
+  if (!card.billing) {
+    $('credit-collecting-detail').innerHTML = `
+      <div class="credit-live-panel credit-setup">
+        <strong>${esc(card.name)}</strong>の締め日と支払日を設定すると、<br>集計中の金額がここに表示されます。<br>
+        <button class="btn-sub" onclick="openCreditSettings('${card.id}')">締め日を設定する</button>
+      </div>`;
+    return;
+  }
+
+  const bill = collectingBillFor(card);
+  const today = todayStr();
+  const daysLeft = Math.max(0, dateDistance(today, bill.end));
+  const totalDays = Math.max(1, dateDistance(bill.start, bill.end) + 1);
+  const elapsedDays = Math.max(1, Math.min(totalDays, dateDistance(bill.start, today) + 1));
+  const progress = Math.round(elapsedDays / totalDays * 100);
+  const closingText = daysLeft === 0 ? '今日締め' : `締めまであと${daysLeft}日`;
+  $('credit-collecting-detail').innerHTML = `
+    <div class="credit-live-panel" role="tabpanel">
+      <div class="credit-live-main">
+        <div><div class="credit-live-label">現在の記帳済み集計額</div><div class="credit-live-amount">${yen(bill.amount)}</div></div>
+        <div class="credit-live-days">${closingText}</div>
+      </div>
+      <div class="credit-cycle-track" aria-label="締め日までの進み具合"><span style="width:${progress}%"></span></div>
+      <div class="credit-live-grid">
+        <div class="credit-live-stat"><span>締め日</span><strong>${fmtMD(bill.end)}</strong></div>
+        <div class="credit-live-stat"><span>引き落とし予定</span><strong>${fmtMD(bill.payDate)}</strong></div>
+        <div class="credit-live-stat"><span>今期の記帳</span><strong>${bill.count}件</strong></div>
+      </div>
+      <div class="credit-live-note">${fmtMD(bill.start)}〜${fmtMD(bill.end)}利用分。まだ締め日前のため、記帳すると金額が増えます。</div>
+    </div>`;
 }
 
 function groupSum(txs, keyFn, type) {
@@ -3349,6 +3462,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 アイコン・表情・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 カード集計・クラウド同期対応</div>
 </body>
 </html>
