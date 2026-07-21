@@ -1804,7 +1804,7 @@ function renderForecastBreakdown(rows, ids, free, daysLeft) {
     <div class="forecast-row"><span>${fmtMD(free.horizon)}までの予定収入</span><strong style="color:var(--income)">+${yen(income)}</strong></div>
     <div class="forecast-row"><span>${fmtMD(free.horizon)}までの予定支出</span><strong style="color:var(--expense)">−${yen(expense)}</strong></div>
     <div class="forecast-row"><span>期間中に一番少なくなる残高</span><strong>${free.free < 0 ? '−' : ''}${yen(Math.abs(free.free))}</strong></div>
-    <div class="empty" style="padding:8px 0 0">残り${daysLeft}日で均等に使った場合の目安です。予定外の支出は含まれません。</div>`;
+    <div class="empty" style="padding:8px 0 0">登録済みの固定費・定期収入と、未記帳のクレカ固定費も含む見込みです。予定外の支出は含まれません。</div>`;
 }
 
 function renderQuickEntries() {
@@ -2030,6 +2030,42 @@ function billFor(method, py, pm) {
   return { start, end, payDate: clampDate(py, pm, b.payDay), amount, settled: end < todayStr() };
 }
 
+// 未記帳のクレカ固定費を、該当する利用期間の見込みとして集計
+function scheduledCreditRecurringForBill(method, start, end) {
+  const items = [];
+  let y = Number(start.slice(0, 4));
+  let m = Number(start.slice(5, 7));
+  const endYm = end.slice(0, 7);
+  for (let guard = 0; guard < 4; guard++) {
+    const ym = `${y}-${pad2(m)}`;
+    for (const r of S.recurring) {
+      if (!r.active || r.kind !== 'expense' || r.methodId !== method.id) continue;
+      if (r.cycle === 'yearly' && r.month !== m) continue;
+      const due = recDueDate(r, y, m);
+      if (due < start || due > end) continue;
+      // この月の実績があれば billFor() 側で数えられるため予定分は足さない
+      if (S.transactions.some(t => t.recurringId === r.id && t.date.startsWith(ym))) continue;
+      items.push({ recurringId:r.id, name:r.name, date:due, amount:recAmountFor(r, y, m) });
+    }
+    if (ym === endYm) break;
+    [y, m] = shiftYM(y, m, 1);
+  }
+  return { items, amount:items.reduce((sum, i) => sum + i.amount, 0) };
+}
+
+// 締め前の請求だけ、実績に未記帳のクレカ固定費予定を足した見込み額を返す
+function expectedBillFor(method, py, pm) {
+  const bill = billFor(method, py, pm);
+  if (bill.settled) return { ...bill, scheduledFixedAmount:0, scheduledFixedCount:0 };
+  const scheduled = scheduledCreditRecurringForBill(method, bill.start, bill.end);
+  return {
+    ...bill,
+    amount:bill.amount + scheduled.amount,
+    scheduledFixedAmount:scheduled.amount,
+    scheduledFixedCount:scheduled.items.length,
+  };
+}
+
 // 今まさに集計中の1回分を、表示月ではなく今日基準で計算
 function collectingBillFor(method) {
   if (!method.billing) return null;
@@ -2039,12 +2075,15 @@ function collectingBillFor(method) {
   const closingThisMonth = clampDate(y, m, method.billing.closingDay);
   const [cy, cm] = today <= closingThisMonth ? [y, m] : shiftYM(y, m, 1);
   const [py, pm] = shiftYM(cy, cm, method.billing.payMonthOffset);
-  const bill = billFor(method, py, pm);
+  const bill = expectedBillFor(method, py, pm);
   const uses = S.transactions.filter(t =>
     (t.type === 'expense' || t.type === 'transfer') &&
-    t.methodId === method.id && t.date >= bill.start && t.date <= today
+    t.methodId === method.id && t.date >= bill.start && t.date <= bill.end
   );
-  return { ...bill, amount: uses.reduce((sum, t) => sum + t.amount, 0), count: uses.length };
+  return {
+    ...bill,
+    count:uses.length,
+  };
 }
 
 function dateDistance(from, to) {
@@ -2107,10 +2146,10 @@ function upcomingPayments(days) {
     const debitId = c.billing.debitMethodId || debitMethodId();
     for (let off = 0; off <= months; off++) {
       const [py, pm] = shiftYM(cy, cm, off);
-      const b = billFor(c, py, pm);
+      const b = expectedBillFor(c, py, pm);
       if (b.payDate >= today && b.payDate <= end && b.amount > 0)
         items.push({ date: b.payDate, name: `${c.name} 引き落とし`, amount: b.amount, methodId: debitId,
-                     note: b.settled ? '確定' : '集計中', noteClass: b.settled ? 'done' : 'upcoming' });
+                     note: b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'), noteClass: b.settled ? 'done' : 'upcoming' });
     }
   }
   for (const r of S.recurring) {
@@ -2231,13 +2270,13 @@ function renderUpcoming() {
   badge.textContent = hasShortfall ? '不足あり' : items.length ? `${items.length}件` : '';
   badge.className = `count-badge${hasShortfall ? ' warn' : ''}`;
   $('upcoming-alerts').innerHTML = alerts;
-  // 固定費・定期収入は記帳するまで一覧に表示しない（判定や「この後」残高の計算には含めたまま）
+  // 未記帳の固定費・定期収入も、計算と同じ順番で一覧に表示する
   const balMap = {};
   for (const m of tracked) balMap[m.id] = balanceOf(m.id);
   let lastYm = '';
   let html = '';
   for (const i of items) {
-    // 残高シミュレーションは非表示の項目も含めて日付順に進める
+    // 残高シミュレーションを日付順に進める
     let afterHtml = '';
     const showAfter = accId => {
       const after = balMap[accId];
@@ -2253,7 +2292,6 @@ function renderUpcoming() {
       balMap[i.methodId] += i.flow === 'in' ? i.amount : -i.amount;
       showAfter(i.methodId);
     }
-    if (i.recId) continue;                     // 未記帳の固定費・定期収入の行はここには出さない
     const ym = i.date.slice(0, 7);
     if (ym !== lastYm) {
       html += `<div class="day-head">${Number(ym.slice(0, 4))}年${Number(ym.slice(5, 7))}月</div>`;
@@ -2271,9 +2309,10 @@ function renderUpcoming() {
         ${afterHtml}
       </div>
       <span class="chip ${i.noteClass}">${i.note}</span>
+      ${i.recId ? `<button class="btn-record" onclick="recordFromRecurring('${i.recId}','${i.date}',${i.amount})">記帳</button>` : ''}
     </div>`;
   }
-  const note = '<div class="empty" style="padding:10px 0 2px;font-size:12px">固定費・定期収入は記帳するとここに並びます（上の判定や残高の計算には含まれています）</div>';
+  const note = '<div class="empty" style="padding:10px 0 2px;font-size:12px">「固定費」「定期収入」の行は、未記帳でも上の判定と残高の計算に含まれています。</div>';
   $('upcoming-list').innerHTML = (html || '<div class="empty">記帳済みの入出金予定はまだありません</div>') + note;
 }
 
@@ -2310,12 +2349,12 @@ function renderCreditBills() {
     // 表示月とその翌月に引き落とされる2回分を表示
     for (const off of [0, 1]) {
       const [py, pm] = shiftYM(view.y, view.m, off);
-      const b = billFor(c, py, pm);
+      const b = expectedBillFor(c, py, pm);
       html += `
         <div class="due-item">
           <div class="info">
             <div class="name">${esc(c.name)}</div>
-            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分</div>
+            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}</div>
           </div>
           <div class="amt">${yen(b.amount)}</div>
           ${b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
@@ -2370,19 +2409,23 @@ function renderCollectingCards(cards) {
   const elapsedDays = Math.max(1, Math.min(totalDays, dateDistance(bill.start, today) + 1));
   const progress = Math.round(elapsedDays / totalDays * 100);
   const closingText = daysLeft === 0 ? '今日締め' : `締めまであと${daysLeft}日`;
+  const countText = bill.scheduledFixedCount ? `${bill.count}件＋予定${bill.scheduledFixedCount}件` : `${bill.count}件`;
+  const billNote = bill.scheduledFixedCount
+    ? `未記帳のクレカ固定費 ${bill.scheduledFixedCount}件（${yen(bill.scheduledFixedAmount)}）を含む見込み。記帳後は実際の金額に自動で置き換わります。`
+    : `${fmtMD(bill.start)}〜${fmtMD(bill.end)}の記帳済み利用分。締め日まで金額が増える可能性があります。`;
   $('credit-collecting-detail').innerHTML = `
     <div class="credit-live-panel" role="tabpanel">
       <div class="credit-live-main">
-        <div><div class="credit-live-label">現在の記帳済み集計額</div><div class="credit-live-amount">${yen(bill.amount)}</div></div>
+        <div><div class="credit-live-label">現在の集計見込み</div><div class="credit-live-amount">${yen(bill.amount)}</div></div>
         <div class="credit-live-days">${closingText}</div>
       </div>
       <div class="credit-cycle-track" aria-label="締め日までの進み具合"><span style="width:${progress}%"></span></div>
       <div class="credit-live-grid">
         <div class="credit-live-stat"><span>締め日</span><strong>${fmtMD(bill.end)}</strong></div>
         <div class="credit-live-stat"><span>引き落とし予定</span><strong>${fmtMD(bill.payDate)}</strong></div>
-        <div class="credit-live-stat"><span>今期の記帳</span><strong>${bill.count}件</strong></div>
+        <div class="credit-live-stat"><span>今期の内訳</span><strong>${countText}</strong></div>
       </div>
-      <div class="credit-live-note">${fmtMD(bill.start)}〜${fmtMD(bill.end)}利用分。まだ締め日前のため、記帳すると金額が増えます。</div>
+      <div class="credit-live-note">${billNote}</div>
     </div>`;
 }
 
@@ -3462,6 +3505,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-19 カード集計・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-21 固定費見込み・クラウド同期対応</div>
 </body>
 </html>
