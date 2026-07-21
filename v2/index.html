@@ -170,6 +170,12 @@
   .wage-time-label { margin-top:2px; font-size:11px; }
   .goal-bar { height:9px; border-radius:999px; background:var(--line); overflow:hidden; margin-top:7px; }
   .goal-bar span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),#9b6cff); }
+  .mood-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:10px; }
+  .mood-setting { border:1px solid var(--line); border-radius:12px; padding:9px; background:#fff; }
+  .mood-setting label { display:flex; align-items:center; gap:6px; margin:0 0 6px; font-size:12px; }
+  .mood-dot { width:10px; height:10px; flex-shrink:0; border-radius:50%; background:var(--dot); box-shadow:0 0 0 3px rgba(108,99,255,.1); }
+  .mood-setting input { margin:0; }
+  .mood-setting small { display:block; margin-top:4px; color:var(--muted); font-size:10px; }
   .starter-guide { border: 1px solid #dedbff; background: #fbfaff; }
   .starter-guide h2 { color: var(--accent); margin-bottom: 3px; }
   .starter-guide .guide-lead { font-size: 13px; color: var(--muted); margin-bottom: 9px; }
@@ -719,6 +725,28 @@
         <b>入力したものだけ</b>がホームに表示されます。ズレてきたらいつでも入力し直せます。
       </p>
       <div id="balance-settings"></div>
+    </div>
+    <div class="card" id="mood-settings-card">
+      <h2>のこりんの表情ライン</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">
+        どの金額で表情が変わるかを自分で設定できます。金額は「この額以上ならこの表情」という境目です。
+      </p>
+      <label for="mood-basis">表情を決める基準</label>
+      <select id="mood-basis" onchange="loadMoodPreset()">
+        <option value="daily">1日あたり使えるお金（現在の方式）</option>
+        <option value="free">今後使えるお金の総額</option>
+      </select>
+      <div class="mood-settings-grid">
+        <div class="mood-setting" style="--dot:#28a98f"><label for="mood-great"><span class="mood-dot"></span>ごきげん</label><input type="number" inputmode="numeric" id="mood-great"><small>円以上</small></div>
+        <div class="mood-setting" style="--dot:#50b9e9"><label for="mood-good"><span class="mood-dot"></span>いい調子</label><input type="number" inputmode="numeric" id="mood-good"><small>円以上</small></div>
+        <div class="mood-setting" style="--dot:#f08a5d"><label for="mood-careful"><span class="mood-dot"></span>しんちょう</label><input type="number" inputmode="numeric" id="mood-careful"><small>円以上</small></div>
+        <div class="mood-setting" style="--dot:#e56b6f"><label for="mood-tight"><span class="mood-dot"></span>ドキドキ</label><input type="number" inputmode="numeric" id="mood-tight"><small>円以上／これ未満は「青ざめ中」</small></div>
+      </div>
+      <div class="row2" style="margin-top:10px">
+        <div><button class="btn-mini" style="width:100%;padding:10px 0" onclick="loadMoodPreset()">おすすめに戻す</button></div>
+        <div><button class="btn-sub" style="width:100%;padding:10px 0" onclick="saveMoodSettings()">表情ラインを保存</button></div>
+      </div>
+      <div class="empty" id="mood-settings-note" style="padding:9px 0 0"></div>
     </div>
     <div class="card">
       <h2>「自由に使えるお金」の区切り日</h2>
@@ -1710,21 +1738,45 @@ function openBalanceSetup() {
 }
 
 const NOKORIN_MOOD_CLASSES = ['mood-unknown', 'mood-great', 'mood-good', 'mood-careful', 'mood-tight', 'mood-danger'];
+const NOKORIN_MOOD_PRESETS = {
+  daily: { great:2000, good:1000, careful:500, tight:0 },
+  free: { great:50000, good:30000, careful:10000, tight:0 },
+};
+
+function normalizedMoodSettings(raw) {
+  const basis = raw?.basis === 'free' ? 'free' : 'daily';
+  const preset = NOKORIN_MOOD_PRESETS[basis];
+  const values = {};
+  for (const key of ['great', 'good', 'careful', 'tight']) {
+    const value = Number(raw?.[key]);
+    values[key] = Number.isFinite(value) ? Math.round(value) : preset[key];
+  }
+  if (!(values.great > values.good && values.good > values.careful && values.careful > values.tight)) {
+    return { basis, ...preset };
+  }
+  return { basis, ...values };
+}
+
+function moodSettings() {
+  return normalizedMoodSettings(S?.nokorinMood);
+}
 
 function nokorinMoodFor(free, daily) {
-  if (free < 0) return {
+  const settings = moodSettings();
+  const amount = settings.basis === 'free' ? free : daily;
+  if (free < 0 || amount < settings.tight) return {
     key:'danger', label:'青ざめ中', energy:8, energyLabel:'しょんぼり', theme:'#845ec2',
     message:'青ざめ中。支払い予定を1つ確認しよう'
   };
-  if (daily < 500) return {
+  if (amount < settings.careful) return {
     key:'tight', label:'ドキドキ', energy:28, energyLabel:'節約モード', theme:'#e56b6f',
     message:'少しドキドキ。使う前に確認しよう'
   };
-  if (daily < 1000) return {
+  if (amount < settings.good) return {
     key:'careful', label:'しんちょう', energy:50, energyLabel:'慎重モード', theme:'#f08a5d',
     message:'慎重モード。小さな出費も記帳しよう'
   };
-  if (daily < 2000) return {
+  if (amount < settings.great) return {
     key:'good', label:'いい調子', energy:73, energyLabel:'にこにこ', theme:'#6876e8',
     message:'いいペース！この調子でいこう'
   };
@@ -3249,8 +3301,43 @@ function renderSettings() {
   $('new-settlement-day').innerHTML = Array.from({ length: 31 }, (_, i) => i + 1)
     .filter(d => !used.has(d))
     .map(d => `<option value="${d}">${d}日</option>`).join('');
+  renderMoodSettings();
   renderBackupStatus();
   renderCloudStatus();
+}
+
+function setMoodInputs(settings) {
+  $('mood-basis').value = settings.basis;
+  for (const key of ['great', 'good', 'careful', 'tight']) $(`mood-${key}`).value = settings[key];
+  $('mood-settings-note').textContent = settings.basis === 'free'
+    ? 'ホームの「今月、あと」の総額で表情が変わります。'
+    : 'ホームの「1日あたり目安」の金額で表情が変わります。';
+}
+
+function renderMoodSettings() {
+  setMoodInputs(moodSettings());
+}
+
+function loadMoodPreset() {
+  const basis = $('mood-basis').value === 'free' ? 'free' : 'daily';
+  setMoodInputs({ basis, ...NOKORIN_MOOD_PRESETS[basis] });
+}
+
+function saveMoodSettings() {
+  const basis = $('mood-basis').value === 'free' ? 'free' : 'daily';
+  const values = {};
+  for (const key of ['great', 'good', 'careful', 'tight']) {
+    const value = Number($(`mood-${key}`).value);
+    if (!Number.isFinite(value)) { toast('すべての金額を入力してください'); return; }
+    values[key] = Math.round(value);
+  }
+  if (!(values.great > values.good && values.good > values.careful && values.careful > values.tight)) {
+    toast('金額は「ごきげん ＞ いい調子 ＞ しんちょう ＞ ドキドキ」の順にしてください');
+    return;
+  }
+  S.nokorinMood = { basis, ...values };
+  persist(); render();
+  toast('のこりんの表情ラインを保存しました ✓');
 }
 
 function addMethod() {
@@ -3441,6 +3528,7 @@ const DEFAULT_DATA = {
   recurring: [],
   balances: {},
   settlementDays: [10, 27],
+  nokorinMood: { basis:'daily', great:2000, good:1000, careful:500, tight:0 },
   student: {},
   loans: [],
   goals: [],
@@ -3456,6 +3544,7 @@ function normalizeData(data) {
   data.recurring = Array.isArray(data.recurring) ? data.recurring : [];
   data.balances = data.balances || {};
   data.settlementDays = Array.isArray(data.settlementDays) && data.settlementDays.length ? data.settlementDays : [10, 27];
+  data.nokorinMood = normalizedMoodSettings(data.nokorinMood);
   data.student = data.student || {};
   data.loans = Array.isArray(data.loans) ? data.loans : [];
   data.goals = Array.isArray(data.goals) ? data.goals : [];
@@ -3505,6 +3594,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-21 固定費見込み・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-22 表情ライン・固定費見込み・クラウド同期対応</div>
 </body>
 </html>
