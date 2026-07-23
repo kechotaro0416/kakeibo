@@ -122,6 +122,16 @@
   .quick-actions button { flex:1; border:1px solid #ded9ff; border-radius:11px; padding:11px 8px; font-weight:750; cursor:pointer; background:linear-gradient(135deg,#fff,#f2efff); color:var(--accent); box-shadow:0 3px 10px rgba(77,65,143,.08); transition:transform .15s ease; }
   .quick-actions button.primary { border:0; background:linear-gradient(135deg,#6c63ff,#9a65ee 60%,#ef75a5); color:#fff; }
   .quick-actions button:active, .student-tool:active { transform:scale(.97); }
+  .home-alert-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+  .home-alert-head h2 { margin:0; }
+  .home-alert-row { display:flex; align-items:center; gap:9px; padding:9px 0; border-top:1px solid var(--line); }
+  .home-alert-row:first-child { border-top:0; }
+  .home-alert-date { width:40px; flex-shrink:0; color:var(--accent); font-size:12px; font-weight:800; }
+  .home-alert-info { flex:1; min-width:0; }
+  .home-alert-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:750; }
+  .home-alert-sub { margin-top:2px; color:var(--muted); font-size:10.5px; }
+  .home-alert-amount { flex-shrink:0; font-size:13px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .home-alert-amount.income { color:var(--income); }
   .credit-live-card { --section-color:#f0789d; background:linear-gradient(145deg,#fff 45%,#fff1f6); overflow:hidden; }
   .credit-live-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .credit-live-head h2 { margin:0; }
@@ -362,8 +372,10 @@
   nav button .ic svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   nav button.active .ic { background:var(--accent-soft); }
   nav button.active { color: var(--accent); }
-  .fab { position:fixed; right:18px; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:11; width:54px; height:54px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:29px; line-height:1; box-shadow:0 5px 16px rgba(108,99,255,.35); cursor:pointer; }
-
+  nav button.nav-entry { color:var(--accent); font-weight:800; }
+  nav button.nav-entry .ic { width:42px; height:42px; margin:-20px auto 1px; border-radius:15px; background:linear-gradient(135deg,#6c63ff,#a765ed 62%,#ef75a5); color:#fff; box-shadow:0 6px 16px rgba(108,99,255,.3); }
+  nav button.nav-entry .ic svg { width:22px; height:22px; }
+  nav button.nav-entry.active .ic { background:linear-gradient(135deg,#5950ed,#8f55df 62%,#e95f91); }
   #modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50;
     display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -438,7 +450,7 @@
         <span class="mood-badge" id="nokorin-mood-label">おやすみ中</span>
       </div>
       <div class="hero-copy">
-        <h2>今月、あと</h2>
+        <h2>今後、使って大丈夫</h2>
         <div class="hero-value" id="free-money-value">—</div>
         <div class="hero-note" id="free-money-note">残高を入れると、のこりんが使える額を予報します</div>
         <div class="hero-cheer" id="hero-cheer">残高を教えてくれたら、一緒に考えるよ</div>
@@ -455,66 +467,33 @@
     </div>
     <div class="quick-actions">
       <button class="primary" onclick="showView('entry'); focusAmount()">＋ 今日の出費を記録</button>
-      <button onclick="showView('history')">記録をみる</button>
+      <button onclick="showView('recurring')">予定をみる</button>
     </div>
     <div class="card" id="quick-entry-card" style="display:none">
       <h2>いつもの記帳</h2>
       <div class="quick-grid" id="quick-entry-list"></div>
     </div>
-    <div class="card">
-      <h2>いまのお金</h2>
-      <div id="balance-list"></div>
+    <div class="card" id="home-alert-card">
+      <div class="home-alert-head">
+        <h2>直近7日間 <span class="count-badge" id="home-alert-badge"></span></h2>
+        <button class="btn-mini" onclick="showView('recurring')">予定をすべて見る</button>
+      </div>
+      <div id="home-alert-list"></div>
     </div>
-    <div class="card" id="forecast-detail-card" style="display:none">
-      <div class="section-toggle"><h2>この金額になる理由</h2><button onclick="toggleCard(this)">内訳を見る</button></div>
-      <div class="collapse-content" id="forecast-breakdown"></div>
+    <div class="card">
+      <h2>現金・口座の残高</h2>
+      <div id="balance-list"></div>
     </div>
     <div class="card credit-live-card" id="credit-collecting-card" style="display:none">
       <div class="credit-live-head">
-        <div><h2>カード集計中 <span class="count-badge warn" id="credit-collecting-badge"></span></h2><div class="credit-live-lead">まだ確定していない今回の利用分</div></div>
+        <div><h2>次回のカード支払い見込み <span class="count-badge warn" id="credit-collecting-badge"></span></h2><div class="credit-live-lead">まだ確定していない今回の利用分</div></div>
       </div>
       <div class="credit-tabs" id="credit-collecting-tabs" role="tablist" aria-label="クレジットカードの切り替え"></div>
       <div id="credit-collecting-detail"></div>
     </div>
-    <div class="card">
-      <h2>今月のお金の動き</h2>
-      <div class="summary">
-        <div><div class="label">収入</div><div class="val income" id="sum-income"></div></div>
-        <div><div class="label">支出</div><div class="val expense" id="sum-expense"></div></div>
-        <div><div class="label">収支</div><div class="val" id="sum-balance"></div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-toggle"><h2 id="upcoming-title">今後の入出金予定 <span class="count-badge" id="upcoming-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="upcoming-alerts"></div><div id="upcoming-list"></div></div>
-    </div>
-    <div class="card">
-      <div class="section-toggle"><h2>この月の固定費・支払い予定 <span class="count-badge" id="due-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="due-alert"></div><div id="due-list"></div></div>
-    </div>
-    <div class="card">
-      <h2>大学生活ツール</h2>
-      <div class="quick-grid">
-        <button class="student-tool" onclick="showStudentTool('student-wage-card')"><span class="tool-icon">¥</span><span>バイト代<br><small style="color:var(--muted)">給料を予測</small></span></button>
-        <button class="student-tool" onclick="showStudentTool('student-loan-card')"><span class="tool-icon">⇄</span><span>割り勘・立替<br><small style="color:var(--muted)">返金を管理</small></span></button>
-        <button class="student-tool" onclick="showStudentTool('student-goal-card')"><span class="tool-icon">○</span><span>貯金目標<br><small style="color:var(--muted)">旅行や学費</small></span></button>
-      </div>
-    </div>
-    <div class="card" id="credit-bills-card">
-      <div class="section-toggle"><h2>クレジットカードの引き落とし</h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="credit-bills"></div></div>
-    </div>
-    <div class="card">
-      <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="break-category"></div></div>
-    </div>
-    <div class="card">
-      <div class="section-toggle"><h2>支払い方法別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="break-method"></div></div>
-    </div>
-    <div class="card">
-      <div class="section-toggle"><h2>収入の内訳</h2><button onclick="toggleCard(this)">表示する</button></div>
-      <div class="collapse-content"><div id="break-income"></div></div>
+    <div class="card" id="forecast-detail-card" style="display:none">
+      <div class="section-toggle"><h2>この金額になる理由</h2><button onclick="toggleCard(this)">内訳を見る</button></div>
+      <div class="collapse-content" id="forecast-breakdown"></div>
     </div>
   </div>
 
@@ -554,6 +533,26 @@
 
   <!-- 履歴 -->
   <div class="view" id="view-history">
+    <div class="card">
+      <h2>今月のお金の動き</h2>
+      <div class="summary">
+        <div><div class="label">収入</div><div class="val income" id="sum-income"></div></div>
+        <div><div class="label">支出</div><div class="val expense" id="sum-expense"></div></div>
+        <div><div class="label">収支</div><div class="val" id="sum-balance"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-category"></div></div>
+    </div>
+    <div class="card">
+      <div class="section-toggle"><h2>支払い方法別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-method"></div></div>
+    </div>
+    <div class="card">
+      <div class="section-toggle"><h2>収入の内訳</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="break-income"></div></div>
+    </div>
     <div class="history-tools">
       <input id="history-search" type="search" placeholder="メモ・カテゴリを検索" oninput="renderHistory()">
       <select id="history-type" onchange="renderHistory()"><option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option><option value="transfer">振替</option></select>
@@ -561,11 +560,23 @@
     <div id="history-list"></div>
   </div>
 
-  <!-- 固定費 -->
+  <!-- 予定 -->
   <div class="view" id="view-recurring">
     <div class="card">
+      <div class="section-toggle"><h2 id="upcoming-title">入出金タイムライン <span class="count-badge" id="upcoming-badge"></span></h2><button onclick="toggleCard(this)">一覧を見る</button></div>
+      <div class="collapse-content"><div id="upcoming-alerts"></div><div id="upcoming-list"></div></div>
+    </div>
+    <div class="card">
+      <div class="section-toggle"><h2>この月の固定費・定期収入 <span class="count-badge" id="due-badge"></span></h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="due-alert"></div><div id="due-list"></div></div>
+    </div>
+    <div class="card" id="credit-bills-card">
+      <div class="section-toggle"><h2>カードの引き落とし予定</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="credit-bills"></div></div>
+    </div>
+    <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h2 style="margin:0">毎月・毎年の固定費と定期収入</h2>
+        <h2 style="margin:0">固定費・定期収入の登録</h2>
         <button class="btn-sub" onclick="openRecForm()">＋ 追加</button>
       </div>
       <div id="rec-summary" class="alert-ok" style="margin:8px 0 4px"></div>
@@ -609,7 +620,7 @@
 
   <!-- 大学生向けツール -->
   <div class="view" id="view-student">
-    <button class="btn-mini" style="margin-bottom:12px" onclick="showView('home')">← ホームへ戻る</button>
+    <button class="btn-mini" style="margin-bottom:12px" onclick="showView('settings')">← その他へ戻る</button>
 
     <div class="card" id="student-wage-card">
       <h2>バイト代の見込み</h2>
@@ -682,6 +693,14 @@
 
   <!-- 設定 -->
   <div class="view" id="view-settings">
+    <div class="card">
+      <h2>大学生活ツール</h2>
+      <div class="quick-grid">
+        <button class="student-tool" onclick="showStudentTool('student-wage-card')"><span class="tool-icon">¥</span><span>バイト代<br><small style="color:var(--muted)">給料を予測</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-loan-card')"><span class="tool-icon">⇄</span><span>割り勘・立替<br><small style="color:var(--muted)">返金を管理</small></span></button>
+        <button class="student-tool" onclick="showStudentTool('student-goal-card')"><span class="tool-icon">○</span><span>貯金目標<br><small style="color:var(--muted)">旅行や学費</small></span></button>
+      </div>
+    </div>
     <div class="card" id="payment-settings-card">
       <h2>支払い方法</h2>
       <div id="method-list"></div>
@@ -816,12 +835,11 @@
 
 <nav>
   <button data-view="home" onclick="showView('home')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z"></path><path d="M9 21v-6h6v6"></path></svg></span>ホーム</button>
-  <button data-view="entry" onclick="showView('entry')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"></path><path d="m14.5 6 3.5 3.5"></path></svg></span>記帳</button>
+  <button data-view="recurring" onclick="showView('recurring')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M8 3v4m8-4v4M4 10h16m-9 5 2 2 4-4"></path></svg></span>予定</button>
+  <button class="nav-entry" data-view="entry" onclick="showView('entry')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"></path><path d="m14.5 6 3.5 3.5"></path></svg></span>記帳</button>
   <button data-view="history" onclick="showView('history')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 8h6M9 12h6M9 16h3"></path></svg></span>履歴</button>
-  <button data-view="recurring" onclick="showView('recurring')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M8 3v4m8-4v4M4 10h16m-9 5 2 2 4-4"></path></svg></span>固定費</button>
-  <button data-view="settings" onclick="showView('settings')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.4 2.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3.4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L5.6 17l.1-.1A1.7 1.7 0 0 0 6 15a1.7 1.7 0 0 0-1.5-1H4.3v-3.4h.2A1.7 1.7 0 0 0 6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1L8 4.6l.1.1A1.7 1.7 0 0 0 10 5a1.7 1.7 0 0 0 1-1.5v-.2h3.4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.5 1h.2v3.4h-.2a1.7 1.7 0 0 0-1.5 1.6Z"></path></svg></span>設定</button>
+  <button data-view="settings" onclick="showView('settings')"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.4 2.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3.4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L5.6 17l.1-.1A1.7 1.7 0 0 0 6 15a1.7 1.7 0 0 0-1.5-1H4.3v-3.4h.2A1.7 1.7 0 0 0 6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1L8 4.6l.1.1A1.7 1.7 0 0 0 10 5a1.7 1.7 0 0 0 1-1.5v-.2h3.4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.5 1h.2v3.4h-.2a1.7 1.7 0 0 0-1.5 1.6Z"></path></svg></span>その他</button>
 </nav>
-<button class="fab" aria-label="支出を記録" onclick="showView('entry'); focusAmount()">＋</button>
 
 <div id="modal-bg" style="display:none">
   <div class="modal">
@@ -1652,8 +1670,8 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   $('view-' + name).classList.add('active');
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  $('month-nav').style.visibility = (name === 'home' || name === 'history') ? 'visible' : 'hidden';
-  const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'固定費', student:'大学生活ツール', settings:'設定' };
+  $('month-nav').style.visibility = (name === 'home' || name === 'history' || name === 'recurring') ? 'visible' : 'hidden';
+  const titles = { home:'のこりん', entry: editingId ? '記録を編集' : '記帳', history:'履歴', recurring:'予定', student:'大学生活ツール', settings:'その他' };
   $('header-title').innerHTML = name === 'home'
     ? '<span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M9 12c.7 1.1 1.5 1.6 3 1.6s2.3-.5 3-1.6M9.5 9.5h.01M14.5 9.5h.01"></path></svg></span>のこりん <span class="beta-badge">v2 β</span>'
     : titles[name];
@@ -1691,24 +1709,13 @@ function showStudentTool(id) {
 
 function renderHome() {
   const txs = txInViewMonth();
-  const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  $('sum-income').textContent = yen(income);
-  $('sum-expense').textContent = yen(expense);
-  const bal = income - expense;
-  $('sum-balance').textContent = (bal < 0 ? '−' : '') + yen(Math.abs(bal));
-  $('sum-balance').className = 'val ' + (bal >= 0 ? 'income' : 'expense');
   renderStarterGuide();
   renderHero(expense);
   renderQuickEntries();
-
+  renderHomeAlerts();
   renderBalances();
-  renderUpcoming();
-  renderDueList();
   renderCreditBills();
-  renderDonut('break-category', groupSum(txs, t => t.category, 'expense'), S.categories.expense);
-  renderDonut('break-method', groupSum(txs, t => methodName(t.methodId), 'expense'), S.paymentMethods.map(m => m.name));
-  renderDonut('break-income', groupSum(txs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
 }
 
 function renderStarterGuide() {
@@ -1881,6 +1888,35 @@ function renderQuickEntries() {
     </button>`).join('');
 }
 
+function renderHomeAlerts() {
+  const items = upcomingPayments(7)
+    .filter(i => i.date >= todayStr())
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const badge = $('home-alert-badge');
+  badge.textContent = items.length ? `${items.length}件` : '';
+  badge.className = 'count-badge';
+  if (!items.length) {
+    $('home-alert-list').innerHTML = '<div class="empty" style="padding:10px 0 2px">直近7日間の予定はありません</div>';
+    return;
+  }
+  const visible = items.slice(0, 3);
+  $('home-alert-list').innerHTML = visible.map(i => {
+    const isIncome = i.flow === 'in';
+    const prefix = i.toId ? '⇄ ' : isIncome ? '+' : '−';
+    return `
+      <div class="home-alert-row">
+        <div class="home-alert-date">${fmtMD(i.date)}</div>
+        <div class="home-alert-info">
+          <div class="home-alert-name">${esc(i.name)}</div>
+          <div class="home-alert-sub">${esc(methodName(i.methodId))}・${esc(i.note || '予定')}</div>
+        </div>
+        <div class="home-alert-amount ${isIncome ? 'income' : ''}">${prefix}${yen(i.amount)}</div>
+      </div>`;
+  }).join('') + (items.length > visible.length
+    ? `<div class="empty" style="padding:8px 0 0">ほか${items.length - visible.length}件は「予定」で確認できます</div>`
+    : '');
+}
+
 function openQuickEntry(id) {
   const t = S.transactions.find(x => x.id === id);
   if (!t) return;
@@ -1931,7 +1967,7 @@ function renderDueList() {
     ? `<div class="alert">⚠ 支払日・入金日を過ぎた未記帳の項目が ${overdue.length} 件あります。実際のお金の動きを確認して記帳しましょう。</div>`
     : '';
   if (!items.length) {
-    $('due-list').innerHTML = '<div class="empty">この月に支払い予定の固定費はありません。<br>「固定費」タブからサブスクや光熱費を登録できます。</div>';
+    $('due-list').innerHTML = '<div class="empty">この月に支払い予定の固定費はありません。<br>「予定」タブからサブスクや光熱費を登録できます。</div>';
     return;
   }
   const chip = { done:'<span class="chip done">記帳済み ✓</span>', overdue:'<span class="chip overdue">未記帳！</span>', upcoming:'<span class="chip upcoming">予定</span>' };
@@ -2248,7 +2284,7 @@ function shortfallFor(methodId, items) {
 function renderBalances() {
   const rows = trackedMethods().filter(m => S.balances[m.id]);
   if (!rows.length) {
-    $('balance-list').innerHTML = '<div class="empty">「設定」タブで現金・銀行口座の残高を入力すると、ここに現在の残高が表示されます</div>';
+    $('balance-list').innerHTML = '<div class="empty">「その他」タブで現金・銀行口座の残高を入力すると、ここに現在の残高が表示されます</div>';
     return;
   }
   let total = 0;
@@ -2305,7 +2341,7 @@ function renderUpcoming() {
   let alerts = '';
   let hasShortfall = false;
   if (!tracked.length) {
-    alerts = '<div class="empty" style="padding:4px 0 10px">「設定」タブで残高を入力すると、支払いに足りるかを自動チェックします</div>';
+    alerts = '<div class="empty" style="padding:4px 0 10px">「その他」タブで残高を入力すると、支払いに足りるかを自動チェックします</div>';
   } else {
     for (const m of tracked) {
       if (!alertItems.some(i => i.methodId === m.id || i.toId === m.id)) continue;
@@ -2393,7 +2429,7 @@ function renderCreditBills() {
         <div class="due-item">
           <div class="info">
             <div class="name">${esc(c.name)}</div>
-            <div class="sub">締め日・支払日が未設定です。「設定」タブの「締日」ボタンから設定すると引き落とし額を自動集計します</div>
+            <div class="sub">締め日・支払日が未設定です。「その他」タブの「締日」ボタンから設定すると引き落とし額を自動集計します</div>
           </div>
         </div>`;
       continue;
@@ -2547,9 +2583,20 @@ function renderDonut(elId, entriesIn, masterList, emptyMsg) {
 }
 
 function renderHistory() {
+  const monthTxs = txInViewMonth();
+  const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const balance = income - expense;
+  $('sum-income').textContent = yen(income);
+  $('sum-expense').textContent = yen(expense);
+  $('sum-balance').textContent = (balance < 0 ? '−' : '') + yen(Math.abs(balance));
+  $('sum-balance').className = 'val ' + (balance >= 0 ? 'income' : 'expense');
+  renderDonut('break-category', groupSum(monthTxs, t => t.category, 'expense'), S.categories.expense);
+  renderDonut('break-method', groupSum(monthTxs, t => methodName(t.methodId), 'expense'), S.paymentMethods.map(m => m.name));
+  renderDonut('break-income', groupSum(monthTxs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
   const q = ($('history-search')?.value || '').trim().toLowerCase();
   const type = $('history-type')?.value || 'all';
-  const txs = txInViewMonth().filter(t => {
+  const txs = monthTxs.filter(t => {
     if (type !== 'all' && t.type !== type) return false;
     if (!q) return true;
     return [t.memo, t.category, methodName(t.methodId), methodName(t.toId)].join(' ').toLowerCase().includes(q);
@@ -2814,6 +2861,9 @@ function recordFromRecurring(recId, dueDate, amount) {
 
 /* ---------- 固定費 ---------- */
 function renderRecurring() {
+  renderUpcoming();
+  renderDueList();
+  renderCreditBills();
   const list = S.recurring.slice().sort((a, b) => a.day - b.day);
   const due = dueItemsForViewMonth();
   const pending = due.filter(x => x.status !== 'done').length;
@@ -3310,7 +3360,7 @@ function setMoodInputs(settings) {
   $('mood-basis').value = settings.basis;
   for (const key of ['great', 'good', 'careful', 'tight']) $(`mood-${key}`).value = settings[key];
   $('mood-settings-note').textContent = settings.basis === 'free'
-    ? 'ホームの「今月、あと」の総額で表情が変わります。'
+    ? 'ホームの「今後、使って大丈夫」の総額で表情が変わります。'
     : 'ホームの「1日あたり目安」の金額で表情が変わります。';
 }
 
@@ -3594,6 +3644,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-22 表情ライン・固定費見込み・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-23 新しい画面構成・クラウド同期対応</div>
 </body>
 </html>
