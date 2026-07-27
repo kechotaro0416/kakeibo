@@ -2275,7 +2275,11 @@ function upcomingPayments(days) {
     for (let off = 0; off <= months; off++) {
       const [py, pm] = shiftYM(cy, cm, off);
       const b = expectedBillFor(c, py, pm);
-      if (b.payDate >= today && b.payDate <= end && b.amount > 0)
+      // 引き落とし済みぶんを balanceOf() がすでに残高から引いているなら、予定には出さない
+      // （両方で数えると同じ引き落としが二重に引かれてしまう）
+      const snap = S.balances[debitId];
+      const 残高に反映済み = !!(snap && b.payDate > snap.date && b.payDate <= today);
+      if (!残高に反映済み && b.payDate >= today && b.payDate <= end && b.amount > 0)
         items.push({ date: b.payDate, name: `${c.name} 引き落とし`, amount: b.amount, methodId: debitId,
                      note: b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'), noteClass: b.settled ? 'done' : 'upcoming' });
     }
@@ -3693,6 +3697,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-27 二重計上の修正・不足時の移動提案</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-27b クレカ引落日の二重計上も修正</div>
 </body>
 </html>
