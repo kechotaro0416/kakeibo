@@ -1693,6 +1693,7 @@ function txInViewMonth() { return S.transactions.filter(t => t.date.startsWith(m
 
 function render() {
   if (!S) return;
+  _recMatchCache.clear();          // 記帳の紐づけ照合をやり直す
   $('month-label').textContent = `${view.y}年${view.m}月`;
   if (currentView === 'home') renderHome();
   if (currentView === 'history') renderHistory();
@@ -1948,9 +1949,10 @@ function dueItemsForViewMonth() {
     if (r.cycle === 'yearly' && r.month !== view.m) continue;
     const dueDate = recDueDate(r, view.y, view.m);
     const amount = recAmountFor(r, view.y, view.m);
-    const rec = S.transactions.find(t => t.recurringId === r.id && t.date.startsWith(monthPrefix()));
+    const rec = recordedTxFor(r, monthPrefix());
     let status = rec ? 'done' : (dueDate < today ? 'overdue' : 'upcoming');
-    items.push({ r, dueDate, amount, status, recordedAmount: rec ? rec.amount : null });
+    items.push({ r, dueDate, amount, status, recordedAmount: rec ? rec.amount : null,
+                 autoLinked: !!(rec && rec.recurringId !== r.id) });
   }
   items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   return items;
@@ -2050,6 +2052,42 @@ function recAmountFor(r, y, m) {
   return (r.overrides || {})[`${y}-${pad2(m)}`] ?? r.amount;
 }
 
+/* 固定費・定期収入が、その月にもう記帳されているかを調べる。
+   「記帳」ボタン経由（recurringIdあり）だけでなく、記帳タブから手で入れた分も
+   支払い方法・メモ・金額から照合する。これをしないと同じ支払いが
+   「残高から引かれた分」と「これから出ていく予定」で二重に数えられてしまう。 */
+let _recMatchCache = new Map();   // render() のたびに作り直す（下の render で clear）
+function recordedMap(ym) {
+  if (_recMatchCache.has(ym)) return _recMatchCache.get(ym);
+  const map = new Map();
+  const used = new Set();
+  const monthTx = S.transactions.filter(t => t.date.startsWith(ym) && t.type !== 'transfer');
+  // 1) recurringId で明示的に紐づいているものを最優先
+  for (const r of S.recurring) {
+    const linked = monthTx.find(t => t.recurringId === r.id && !used.has(t.id));
+    if (linked) { map.set(r.id, linked); used.add(linked.id); }
+  }
+  // 2) 紐づけのない記帳を照合（同じ支払い方法であることが前提）
+  const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  for (const r of S.recurring) {
+    if (map.has(r.id)) continue;
+    const wantType = r.kind === 'income' ? 'income' : 'expense';
+    const expected = recAmountFor(r, y, m);
+    const cands = monthTx.filter(t => !used.has(t.id) && !t.recurringId &&
+      t.type === wantType && t.methodId === r.methodId);
+    // 同じカテゴリの固定費が複数ある場合、カテゴリだけの照合は使わない
+    const sameCatRecs = S.recurring.filter(x => x.active && x.category === r.category && x.methodId === r.methodId).length;
+    const sameCatTx = cands.filter(t => t.category === r.category);
+    const hit = cands.find(t => (t.memo || '').includes(r.name))
+      || cands.find(t => t.amount === expected && t.category === r.category)
+      || (sameCatRecs === 1 && sameCatTx.length === 1 ? sameCatTx[0] : null);
+    if (hit) { map.set(r.id, hit); used.add(hit.id); }
+  }
+  _recMatchCache.set(ym, map);
+  return map;
+}
+function recordedTxFor(r, ym) { return recordedMap(ym).get(r.id) || null; }
+
 // 区切り日（既定10日・27日）のリスト
 function settlementDays() {
   const d = (S.settlementDays && S.settlementDays.length) ? S.settlementDays.slice() : [10, 27];
@@ -2092,7 +2130,9 @@ function freeMoneyFrom(startStr, coreIds) {
     } else if (coreIds.has(it.methodId)) {
       delta = it.flow === 'in' ? it.amount : -it.amount;
     }
-    if (it.date <= startStr) { run += delta; continue; }  // 起点まではただ残高を進める（底値の対象外）
+    // 起点より前はただ残高を進めるだけ。起点当日の支払い（今日ぶんの家賃など）は
+    // まだ払っていないので、底値とその理由の対象に含める。
+    if (it.date < startStr) { run += delta; continue; }
     if (free === null) free = run;                        // 起点時点の残高を最初の候補に
     run += delta;
     if (run < free) { free = run; minAt = it; }
@@ -2132,7 +2172,7 @@ function scheduledCreditRecurringForBill(method, start, end) {
       const due = recDueDate(r, y, m);
       if (due < start || due > end) continue;
       // この月の実績があれば billFor() 側で数えられるため予定分は足さない
-      if (S.transactions.some(t => t.recurringId === r.id && t.date.startsWith(ym))) continue;
+      if (recordedTxFor(r, ym)) continue;
       items.push({ recurringId:r.id, name:r.name, date:due, amount:recAmountFor(r, y, m) });
     }
     if (ym === endYm) break;
@@ -2250,7 +2290,7 @@ function upcomingPayments(days) {
       if (r.cycle === 'yearly' && r.month !== mo) continue;
       const due = recDueDate(r, y, mo);
       if (due < today || due > end) continue;
-      if (S.transactions.some(t => t.recurringId === r.id && t.date.startsWith(`${y}-${pad2(mo)}`))) continue;
+      if (recordedTxFor(r, `${y}-${pad2(mo)}`)) continue;
       items.push({ date: due, name: r.name, amount: recAmountFor(r, y, mo), methodId: r.methodId,
                    flow: isIncome ? 'in' : 'out', recId: r.id, ym: `${y}-${pad2(mo)}`,
                    note: isIncome ? '定期収入' : '固定費', noteClass: isIncome ? 'done' : 'upcoming' });
@@ -2348,7 +2388,16 @@ function renderUpcoming() {
       const sf = shortfallFor(m.id, alertItems);
       if (sf.lack) {
         hasShortfall = true;
-        alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します</div>`;
+        // 他の口座・財布に余りがあれば「移せば足りる」と具体策を出す
+        const others = tracked.filter(x => x.id !== m.id)
+          .map(x => ({ name: x.name, free: balanceOf(x.id) }))
+          .filter(x => x.free > 0)
+          .sort((a, b) => b.free - a.free);
+        const pool = others.reduce((s, x) => s + x.free, 0);
+        const help = pool >= sf.lack && others.length
+          ? `<br>→ ${esc(others[0].name)}から ${yen(sf.lack)} 移せば足ります`
+          : '';
+        alerts += `<div class="alert">⚠ ${fmtMD(sf.date)}「${esc(sf.name)}」の時点で ${esc(m.name)} が ${yen(sf.lack)} 不足します${help}</div>`;
       } else {
         alerts += `<div class="alert-ok">✓ ${esc(m.name)} は ${fmtMD(alertHorizon)} までの支払いに足ります（入出金をすべて終えた後の残り ${yen(sf.remain)}）</div>`;
       }
@@ -3644,6 +3693,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-23 新しい画面構成・クラウド同期対応</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-27 二重計上の修正・不足時の移動提案</div>
 </body>
 </html>
