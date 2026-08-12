@@ -344,6 +344,23 @@
   .history-tools input, .history-tools select { min-width:0; padding:9px 10px; }
   .history-tools input { flex:2; }
   .history-tools select { flex:1; }
+  .recent-history-card { padding-bottom:10px; border-color:#dedaff; background:linear-gradient(145deg,#fff 56%,#f3f0ff); }
+  .recent-history-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:4px; }
+  .recent-history-head h2 { margin:0; color:var(--text); font-size:16px; font-weight:800; }
+  .recent-history-summary { margin-top:4px; color:var(--muted); font-size:11.5px; line-height:1.5; }
+  .recent-tx { width:100%; display:flex; align-items:center; gap:9px; padding:10px 0; border:0; border-top:1px solid var(--line); background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+  .recent-tx:first-child { border-top:0; }
+  .recent-tx:active { opacity:.65; }
+  .recent-time { width:39px; flex-shrink:0; color:var(--muted); font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .recent-info { flex:1; min-width:0; }
+  .recent-name { display:flex; align-items:center; gap:5px; min-width:0; font-size:13.5px; font-weight:750; }
+  .recent-name-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .recent-latest { flex-shrink:0; border-radius:999px; padding:2px 6px; background:var(--accent); color:#fff; font-size:9px; font-weight:850; }
+  .recent-sub { margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:10.5px; }
+  .recent-amount { flex-shrink:0; font-size:13.5px; font-weight:850; font-variant-numeric:tabular-nums; }
+  .recent-amount.income { color:var(--income); }
+  .recent-amount.transfer { color:var(--muted); }
+  .recent-more { width:100%; margin-top:2px; border:0; border-top:1px solid var(--line); background:transparent; color:var(--accent); padding:9px 4px 2px; font-size:12px; font-weight:750; cursor:pointer; }
   .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 18px 0; }
 
   /* 固定費・設定リスト */
@@ -533,6 +550,17 @@
 
   <!-- 履歴 -->
   <div class="view" id="view-history">
+    <div class="card recent-history-card" id="recent-history-card">
+      <div class="recent-history-head">
+        <div>
+          <h2><span id="recent-history-title">今日の記録</span><span class="count-badge" id="recent-history-badge"></span></h2>
+          <div class="recent-history-summary" id="recent-history-summary"></div>
+        </div>
+        <button class="btn-sub" onclick="showView('entry');focusAmount()">＋ 記帳</button>
+      </div>
+      <div id="recent-history-list"></div>
+      <button class="recent-more" id="recent-history-more" style="display:none" onclick="toggleRecentHistory()"></button>
+    </div>
     <div class="card">
       <h2>今月のお金の動き</h2>
       <div class="summary">
@@ -2635,7 +2663,100 @@ function renderDonut(elId, entriesIn, masterList, emptyMsg) {
   $(elId).innerHTML = `<div class="donut-wrap">${svg}<div class="legend">${legend}</div></div>`;
 }
 
+let recentHistoryExpanded = false;
+
+// 併用払いは複数の記録に分かれるため、「1回の記帳」にまとめて最近欄へ表示する
+function recentHistoryEntries() {
+  const sorted = S.transactions.slice().sort((a, b) =>
+    Number(b.createdAt || 0) - Number(a.createdAt || 0) || b.date.localeCompare(a.date));
+  const grouped = new Map();
+  for (const t of sorted) {
+    const key = t.splitId ? `split:${t.splitId}` : `tx:${t.id}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: t.id, date: t.date, type: t.type, category: t.category, memo: t.memo || '',
+        amount: 0, createdAt: Number(t.createdAt || 0), methodIds: [], toId: t.toId || null,
+      });
+    }
+    const row = grouped.get(key);
+    row.amount += Number(t.amount || 0);
+    if (t.methodId && !row.methodIds.includes(t.methodId)) row.methodIds.push(t.methodId);
+  }
+  return [...grouped.values()];
+}
+
+function recentHistoryTime(row, isToday) {
+  const created = new Date(row.createdAt);
+  if (isToday && row.createdAt && !Number.isNaN(created.getTime())) {
+    return `${pad2(created.getHours())}:${pad2(created.getMinutes())}`;
+  }
+  return fmtMD(row.date);
+}
+
+function recentHistoryMethod(row) {
+  if (row.type === 'transfer') return `${methodName(row.methodIds[0])} → ${methodName(row.toId)}`;
+  return row.methodIds.map(methodName).join('＋');
+}
+
+function renderRecentHistory() {
+  const today = todayStr();
+  const allRows = recentHistoryEntries();
+  const todayRows = allRows.filter(row => row.date === today);
+  const hasToday = todayRows.length > 0;
+  const rows = hasToday ? todayRows : allRows.slice(0, 1);
+  const visible = recentHistoryExpanded ? rows : rows.slice(0, 4);
+  $('recent-history-title').textContent = hasToday ? '今日の記録' : (rows.length ? '直前の記録' : '今日の記録');
+  $('recent-history-badge').textContent = hasToday ? `${todayRows.length}件` : '';
+
+  if (hasToday) {
+    const rawToday = S.transactions.filter(t => t.date === today);
+    const expense = rawToday.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const income = rawToday.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const parts = [];
+    if (expense) parts.push(`支出 ${yen(expense)}`);
+    if (income) parts.push(`収入 +${yen(income)}`);
+    $('recent-history-summary').textContent = parts.join(' ・ ') || '今日の振替記録';
+  } else {
+    $('recent-history-summary').textContent = rows.length
+      ? '今日はまだ記帳していません。最後に入力した記録です'
+      : '今日はまだ記帳していません';
+  }
+
+  if (!visible.length) {
+    $('recent-history-list').innerHTML = '<div class="empty" style="padding:14px 0 8px">上の「＋ 記帳」から最初の記録を入れられます</div>';
+  } else {
+    $('recent-history-list').innerHTML = visible.map((row, index) => {
+      const isTransfer = row.type === 'transfer';
+      const isIncome = row.type === 'income';
+      const name = isTransfer ? (row.memo || '振替') : (row.memo || row.category);
+      const method = recentHistoryMethod(row);
+      const sub = `${row.memo && !isTransfer ? `${row.category}・` : ''}${method}`;
+      const prefix = isTransfer ? '⇄ ' : isIncome ? '+' : '−';
+      return `<button class="recent-tx" onclick="editTx('${row.id}')" aria-label="${esc(name)} ${yen(row.amount)}を編集">
+        <span class="recent-time">${recentHistoryTime(row, hasToday)}</span>
+        <span class="recent-info">
+          <span class="recent-name">${index === 0 ? '<span class="recent-latest">最新</span>' : ''}<span class="recent-name-text">${esc(name)}</span></span>
+          <span class="recent-sub">${esc(sub)}</span>
+        </span>
+        <span class="recent-amount ${isTransfer ? 'transfer' : isIncome ? 'income' : ''}">${prefix}${yen(row.amount)}</span>
+      </button>`;
+    }).join('');
+  }
+
+  const more = $('recent-history-more');
+  if (rows.length > 4) {
+    more.style.display = '';
+    more.textContent = recentHistoryExpanded ? '最新の4件だけ表示' : `今日の残り${rows.length - 4}件も表示`;
+  } else more.style.display = 'none';
+}
+
+function toggleRecentHistory() {
+  recentHistoryExpanded = !recentHistoryExpanded;
+  renderRecentHistory();
+}
+
 function renderHistory() {
+  renderRecentHistory();
   const monthTxs = txInViewMonth();
   const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -3697,6 +3818,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-07-27b クレカ引落日の二重計上も修正</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-08-12 履歴に「今日の記録」を追加</div>
 </body>
 </html>
