@@ -152,6 +152,8 @@
   .credit-live-stat span { display:block; color:var(--muted); font-size:10px; }
   .credit-live-stat strong { display:block; margin-top:2px; color:var(--text); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .credit-live-note { margin-top:9px; color:var(--muted); font-size:11px; line-height:1.5; }
+  .credit-live-auto { margin-top:3px; color:var(--muted); font-size:11px; font-weight:700; }
+  .credit-live-actions { display:flex; justify-content:flex-end; gap:6px; margin-top:10px; }
   .credit-setup { text-align:center; padding:6px 2px 2px; color:var(--muted); font-size:12px; line-height:1.6; }
   .credit-setup .btn-sub { margin-top:9px; }
   .quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -232,12 +234,18 @@
   .due-item .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .due-item .amt { font-weight: 700; white-space: nowrap; }
   .due-item .amt.income { color: var(--income); }
+  .credit-bill-row { flex-wrap:wrap; }
+  .credit-bill-row .info { flex-basis:170px; }
+  .credit-bill-amount { text-align:right; }
+  .credit-bill-auto { margin-top:2px; color:var(--muted); font-size:10px; white-space:nowrap; }
+  .credit-bill-actions { width:100%; display:flex; justify-content:flex-end; gap:6px; }
   .chip {
     font-size: 11px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600;
   }
   .chip.done { background: var(--ok-bg); color: var(--ok); }
   .chip.overdue { background: var(--warn-bg); color: var(--warn); }
   .chip.upcoming { background: #eef2ff; color: #4338ca; }
+  .chip.adjusted { background:#fff0f5; color:#a73f68; }
   .btn-record {
     background: var(--accent); color: #fff; border: none;
     padding: 7px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -431,7 +439,7 @@
     transition: all .25s; z-index: 100; white-space: nowrap;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  #toast button { margin-left:10px; border:0; border-radius:999px; padding:5px 9px; background:#fff; color:var(--accent); font-weight:800; cursor:pointer; }
+  #toast button { pointer-events:auto; margin-left:10px; border:0; border-radius:999px; padding:5px 9px; background:#fff; color:var(--accent); font-weight:800; cursor:pointer; }
   @media (max-width: 420px) {
     .row2 { flex-direction:column; gap:0; }
     .history-tools { gap:6px; }
@@ -2205,6 +2213,18 @@ function billFor(method, py, pm) {
   return { start, end, payDate: clampDate(py, pm, b.payDay), amount, settled: end < todayStr() };
 }
 
+function billAdjustmentKey(py, pm) { return `${py}-${pad2(pm)}`; }
+
+function billAdjustmentFor(method, py, pm) {
+  const key = billAdjustmentKey(py, pm);
+  const raw = method.billAdjustments && method.billAdjustments[key];
+  if (raw === null || raw === undefined) return null;
+  const value = typeof raw === 'object' ? raw.amount : raw;
+  const amount = Math.round(Number(value));
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return { key, amount, updatedAt: typeof raw === 'object' ? raw.updatedAt || null : null };
+}
+
 // 未記帳のクレカ固定費を、該当する利用期間の見込みとして集計
 function scheduledCreditRecurringForBill(method, start, end) {
   const items = [];
@@ -2231,11 +2251,19 @@ function scheduledCreditRecurringForBill(method, start, end) {
 // 締め前の請求だけ、実績に未記帳のクレカ固定費予定を足した見込み額を返す
 function expectedBillFor(method, py, pm) {
   const bill = billFor(method, py, pm);
-  if (bill.settled) return { ...bill, scheduledFixedAmount:0, scheduledFixedCount:0 };
-  const scheduled = scheduledCreditRecurringForBill(method, bill.start, bill.end);
+  const scheduled = bill.settled
+    ? { items:[], amount:0 }
+    : scheduledCreditRecurringForBill(method, bill.start, bill.end);
+  const calculatedAmount = bill.amount + scheduled.amount;
+  const adjustment = billAdjustmentFor(method, py, pm);
   return {
     ...bill,
-    amount:bill.amount + scheduled.amount,
+    amount:adjustment ? adjustment.amount : calculatedAmount,
+    calculatedAmount,
+    manuallyAdjusted:Boolean(adjustment),
+    adjustmentKey:billAdjustmentKey(py, pm),
+    paymentYear:py,
+    paymentMonth:pm,
     scheduledFixedAmount:scheduled.amount,
     scheduledFixedCount:scheduled.items.length,
   };
@@ -2300,7 +2328,7 @@ function balanceOf(methodId) {
       if ((c.billing.debitMethodId || debitMethodId()) !== methodId) continue;
       let y = Number(a.date.slice(0, 4)), mo = Number(a.date.slice(5, 7));
       while (y < now.getFullYear() || (y === now.getFullYear() && mo <= now.getMonth() + 1)) {
-        const b = billFor(c, y, mo);
+        const b = expectedBillFor(c, y, mo);
         if (b.payDate > a.date && b.payDate <= today) bal -= b.amount;
         [y, mo] = shiftYM(y, mo, 1);
       }
@@ -2330,7 +2358,8 @@ function upcomingPayments(days) {
       if (!残高に反映済み && b.payDate >= today && b.payDate <= end && b.amount > 0)
         items.push({ date: b.payDate, name: `${c.name} 引き落とし`, amount: b.amount, methodId: debitId,
                      sourceOrder: 0, calcOrder: automaticOrder++,
-                     note: b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'), noteClass: b.settled ? 'done' : 'upcoming' });
+                     note: b.manuallyAdjusted ? '調整済み' : b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'),
+                     noteClass: b.manuallyAdjusted ? 'adjusted' : b.settled ? 'done' : 'upcoming' });
     }
   }
   for (const r of S.recurring) {
@@ -2525,6 +2554,70 @@ async function setBalance(id) {
   toast('残高を設定しました ✓');
 }
 
+async function editCreditBillAmount(methodId, py, pm) {
+  const card = S.paymentMethods.find(m => m.id === methodId && m.type === 'credit');
+  if (!card || !card.billing) return;
+  const bill = expectedBillFor(card, py, pm);
+  const val = await appPrompt(
+    `「${card.name}」${fmtMD(bill.payDate)}引き落とし分の予定額（円）\n\n自動集計: ${yen(bill.calculatedAmount)}\nポイント充当・一部先払い後に、実際に引き落とされる予定額を入力してください。\n空欄で自動計算に戻します。`,
+    String(bill.amount)
+  );
+  if (val == null) return;
+  const before = card.billAdjustments ? structuredClone(card.billAdjustments) : null;
+  const key = billAdjustmentKey(py, pm);
+  if (val.trim() === '') {
+    if (card.billAdjustments) delete card.billAdjustments[key];
+  } else {
+    const amount = Math.round(Number(val.replace(/[,，¥\s円]/g, '')));
+    if (!Number.isFinite(amount) || amount < 0) { toast('0円以上の数字で入力してください'); return; }
+    card.billAdjustments = card.billAdjustments || {};
+    if (amount === bill.calculatedAmount) delete card.billAdjustments[key];
+    else card.billAdjustments[key] = {
+      amount,
+      updatedAt:new Date().toISOString(),
+      calculatedAmountAtSet:bill.calculatedAmount,
+      payDateAtSet:bill.payDate,
+      periodStartAtSet:bill.start,
+      periodEndAtSet:bill.end,
+    };
+  }
+  if (card.billAdjustments && !Object.keys(card.billAdjustments).length) delete card.billAdjustments;
+  if (!persist()) {
+    if (before) card.billAdjustments = before;
+    else delete card.billAdjustments;
+    return;
+  }
+  render();
+  const updated = billAdjustmentFor(card, py, pm);
+  toast(updated ? `引き落とし予定を ${yen(updated.amount)} に調整しました ✓` : '自動計算に戻しました ✓');
+}
+
+function resetCreditBillAmount(methodId, py, pm) {
+  const card = S.paymentMethods.find(m => m.id === methodId && m.type === 'credit');
+  const key = billAdjustmentKey(py, pm);
+  if (!card || !card.billAdjustments || card.billAdjustments[key] === undefined) return;
+  const previous = structuredClone(card.billAdjustments[key]);
+  delete card.billAdjustments[key];
+  if (!Object.keys(card.billAdjustments).length) delete card.billAdjustments;
+  if (!persist()) {
+    card.billAdjustments = card.billAdjustments || {};
+    card.billAdjustments[key] = previous;
+    return;
+  }
+  render();
+  toastAction('自動計算に戻しました', '元に戻す', () => {
+    card.billAdjustments = card.billAdjustments || {};
+    card.billAdjustments[key] = previous;
+    if (!persist()) {
+      delete card.billAdjustments[key];
+      if (!Object.keys(card.billAdjustments).length) delete card.billAdjustments;
+      return;
+    }
+    render();
+    toast('調整額を元に戻しました ✓');
+  });
+}
+
 function renderCreditBills() {
   const cards = S.paymentMethods.filter(m => m.type === 'credit');
   const wrap = $('credit-bills-card');
@@ -2548,13 +2641,17 @@ function renderCreditBills() {
       const [py, pm] = shiftYM(view.y, view.m, off);
       const b = expectedBillFor(c, py, pm);
       html += `
-        <div class="due-item">
+        <div class="due-item credit-bill-row">
           <div class="info">
             <div class="name">${esc(c.name)}</div>
-            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}</div>
+            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.manuallyAdjusted ? '・ポイント／先払い反映' : ''}</div>
           </div>
-          <div class="amt">${yen(b.amount)}</div>
-          ${b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+          <div class="credit-bill-amount"><div class="amt">${yen(b.amount)}</div>${b.manuallyAdjusted ? `<div class="credit-bill-auto">自動 ${yen(b.calculatedAmount)}</div>` : ''}</div>
+          ${b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+          <div class="credit-bill-actions">
+            <button class="btn-mini" onclick="editCreditBillAmount('${c.id}',${py},${pm})">支払額を調整</button>
+            ${b.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${c.id}',${py},${pm})">自動に戻す</button>` : ''}
+          </div>
         </div>`;
     }
   }
@@ -2607,13 +2704,15 @@ function renderCollectingCards(cards) {
   const progress = Math.round(elapsedDays / totalDays * 100);
   const closingText = daysLeft === 0 ? '今日締め' : `締めまであと${daysLeft}日`;
   const countText = bill.scheduledFixedCount ? `${bill.count}件＋予定${bill.scheduledFixedCount}件` : `${bill.count}件`;
-  const billNote = bill.scheduledFixedCount
+  const billNote = bill.manuallyAdjusted
+    ? `自動集計は ${yen(bill.calculatedAmount)}。ポイント・先払い後の予定額を手動で設定しています。新しい利用を記帳しても手動額は自動で変わらないため、必要なら再調整してください。PayPayやポイント残高も管理している場合は、使った分を「振替」でカードへ移すと残高にも反映できます。`
+    : bill.scheduledFixedCount
     ? `未記帳のクレカ固定費 ${bill.scheduledFixedCount}件（${yen(bill.scheduledFixedAmount)}）を含む見込み。記帳後は実際の金額に自動で置き換わります。`
     : `${fmtMD(bill.start)}〜${fmtMD(bill.end)}の記帳済み利用分。締め日まで金額が増える可能性があります。`;
   $('credit-collecting-detail').innerHTML = `
     <div class="credit-live-panel" role="tabpanel">
       <div class="credit-live-main">
-        <div><div class="credit-live-label">現在の集計見込み</div><div class="credit-live-amount">${yen(bill.amount)}</div></div>
+        <div><div class="credit-live-label">${bill.manuallyAdjusted ? '実際の引き落とし予定' : '現在の集計見込み'}</div><div class="credit-live-amount">${yen(bill.amount)}</div>${bill.manuallyAdjusted ? `<div class="credit-live-auto">自動集計 ${yen(bill.calculatedAmount)}</div>` : ''}</div>
         <div class="credit-live-days">${closingText}</div>
       </div>
       <div class="credit-cycle-track" aria-label="締め日までの進み具合"><span style="width:${progress}%"></span></div>
@@ -2623,6 +2722,10 @@ function renderCollectingCards(cards) {
         <div class="credit-live-stat"><span>今期の内訳</span><strong>${countText}</strong></div>
       </div>
       <div class="credit-live-note">${billNote}</div>
+      <div class="credit-live-actions">
+        <button class="btn-mini" onclick="editCreditBillAmount('${card.id}',${bill.paymentYear},${bill.paymentMonth})">支払額を調整</button>
+        ${bill.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${card.id}',${bill.paymentYear},${bill.paymentMonth})">自動に戻す</button>` : ''}
+      </div>
     </div>`;
 }
 
@@ -3973,6 +4076,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-08-12b 同じ日の記帳順を変更可能に</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-08-12c カード支払額を調整可能に</div>
 </body>
 </html>
