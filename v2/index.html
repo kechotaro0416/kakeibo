@@ -440,8 +440,68 @@
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast button { pointer-events:auto; margin-left:10px; border:0; border-radius:999px; padding:5px 9px; background:#fff; color:var(--accent); font-weight:800; cursor:pointer; }
+  /* 月またぎ分析 */
+  .trend-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .trend-head h2 { margin:0; }
+  .trend-range { display:flex; gap:6px; flex-shrink:0; }
+  .trend-range button { border:1px solid var(--line); border-radius:999px; background:#fff; color:var(--muted); padding:5px 10px; font-size:11.5px; font-weight:750; cursor:pointer; }
+  .trend-range button.active { border-color:transparent; background:var(--accent-soft); color:var(--accent); }
+  .trend-chart { display:block; width:100%; height:auto; }
+  .trend-chart .grid { stroke:var(--line); stroke-width:.6; }
+  .trend-chart .axis-text { fill:var(--muted); font-size:6.4px; font-weight:700; }
+  .trend-chart .peak-text { fill:var(--muted); font-size:6px; font-weight:700; }
+  .trend-month { cursor:pointer; }
+  .trend-month .month-bg { fill:transparent; }
+  .trend-month.current .month-bg { fill:var(--accent-soft); }
+  .trend-month:hover .month-bg { fill:#f1eefc; }
+  .trend-month.current:hover .month-bg { fill:var(--accent-soft); }
+  .trend-month .bar-expense { fill:var(--expense); }
+  .trend-month .bar-income { fill:var(--income); }
+  .trend-month .month-label { fill:var(--muted); font-size:6.4px; font-weight:750; }
+  .trend-month.current .month-label { fill:var(--accent); }
+  .trend-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:9px; color:var(--muted); font-size:11.5px; }
+  .trend-legend .dot { display:inline-block; width:9px; height:9px; margin-right:5px; border-radius:3px; vertical-align:-1px; }
+  .trend-hint { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.6; }
+  .trend-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-top:12px; }
+  .trend-stat { min-width:0; border-radius:10px; padding:8px; background:var(--accent-soft); }
+  .trend-stat span { display:block; color:var(--muted); font-size:10px; }
+  .trend-stat strong { display:block; margin-top:2px; font-size:13px; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .trend-table-wrap { overflow-x:auto; margin-top:10px; }
+  .trend-table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+  .trend-table th, .trend-table td { padding:6px 4px; border-top:1px solid var(--line); text-align:right; white-space:nowrap; }
+  .trend-table th:first-child, .trend-table td:first-child { text-align:left; }
+  .trend-table thead th { border-top:0; color:var(--muted); font-weight:700; }
+  .trend-table td.income { color:var(--income); }
+  .trend-table td.expense { color:var(--expense); }
+  .trend-table td.zero { color:var(--muted); opacity:.55; }
+  .cat-move { display:flex; align-items:center; gap:9px; padding:9px 0; border-top:1px solid var(--line); }
+  .cat-move:first-child { border-top:0; }
+  .cat-move .cname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:700; }
+  .cat-move .cbar { position:relative; flex-shrink:0; width:72px; height:7px; border-radius:999px; background:var(--line); }
+  .cat-move .cbar span { display:block; height:100%; border-radius:inherit; background:var(--accent); }
+  .cat-move .cbar i { position:absolute; top:-2px; width:2px; height:11px; border-radius:1px; background:var(--muted); }
+  .cat-move .cdelta { flex-shrink:0; width:66px; text-align:right; font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .cat-move .cdelta.up { color:var(--expense); }
+  .cat-move .cdelta.down { color:var(--income); }
+  .cat-move .cdelta.flat { color:var(--muted); }
+
+  /* レシート写真 */
+  .receipt-row { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+  .receipt-thumb { width:56px; height:56px; flex-shrink:0; overflow:hidden; border-radius:10px; border:1px solid var(--line); background:#f4f2fb; cursor:pointer; }
+  .receipt-thumb img { display:block; width:100%; height:100%; object-fit:cover; }
+  .receipt-placeholder { display:grid; place-items:center; color:var(--muted); font-size:20px; }
+  .receipt-body { flex:1; min-width:0; }
+  .receipt-body .btn-mini + .btn-mini { margin-left:6px; }
+  .receipt-note { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.5; }
+  .tx-clip { margin-left:5px; color:var(--muted); font-size:11px; }
+  #receipt-viewer { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(24,20,50,.84); }
+  #receipt-viewer img { max-width:100%; max-height:80vh; border-radius:12px; box-shadow:0 18px 44px rgba(0,0,0,.45); }
+  #receipt-viewer button { position:absolute; top:calc(14px + env(safe-area-inset-top)); right:14px; border:0; border-radius:999px; padding:9px 15px; background:rgba(255,255,255,.94); color:var(--text); font-weight:800; cursor:pointer; }
+
   @media (max-width: 420px) {
     .row2 { flex-direction:column; gap:0; }
+    .cat-move .cbar { width:54px; }
+    .cat-move .cdelta { width:60px; }
     .history-tools { gap:6px; }
     .hero-value { font-size:26px; }
     .hero-copy { padding-right:88px; }
@@ -567,6 +627,15 @@
       </div>
       <label>メモ（任意）</label>
       <input type="text" id="f-memo" placeholder="例: コンビニ、〇〇と昼ごはん">
+      <div class="receipt-row" id="receipt-row">
+        <div class="receipt-thumb receipt-placeholder" id="receipt-thumb" onclick="onReceiptThumbClick()">🧾</div>
+        <div class="receipt-body">
+          <button type="button" class="btn-mini" onclick="$('receipt-file').click()" id="receipt-pick">レシートを撮る・選ぶ</button>
+          <button type="button" class="btn-mini" id="receipt-remove" style="display:none" onclick="removeEntryReceipt()">外す</button>
+          <div class="receipt-note" id="receipt-note">写真はこの端末の中だけに保存されます（クラウド同期には含まれません）</div>
+        </div>
+      </div>
+      <input type="file" id="receipt-file" accept="image/*" capture="environment" style="display:none" onchange="pickEntryReceipt(this)">
       <button class="btn-primary" id="entry-save" onclick="saveEntry()">記帳する</button>
       <button class="btn-danger" id="entry-delete" style="display:none" onclick="deleteEntry()">この記録を削除</button>
     </div>
@@ -595,6 +664,23 @@
         <div><div class="label">支出</div><div class="val expense" id="sum-expense"></div></div>
         <div><div class="label">収支</div><div class="val" id="sum-balance"></div></div>
       </div>
+    </div>
+    <div class="card" id="trend-card">
+      <div class="trend-head">
+        <h2>月ごとの推移</h2>
+        <div class="trend-range" id="trend-range">
+          <button data-months="6" onclick="setTrendMonths(6)">6か月</button>
+          <button data-months="12" onclick="setTrendMonths(12)">12か月</button>
+        </div>
+      </div>
+      <div id="trend-chart"></div>
+      <div class="trend-stats" id="trend-stats"></div>
+      <button class="btn-mini" style="margin-top:10px;width:100%" id="trend-table-toggle" onclick="toggleTrendTable()">数字を表で見る</button>
+      <div id="trend-table"></div>
+    </div>
+    <div class="card" id="trend-category-card">
+      <div class="section-toggle"><h2>カテゴリ別の増減</h2><button onclick="toggleCard(this)">表示する</button></div>
+      <div class="collapse-content"><div id="trend-category"></div></div>
     </div>
     <div class="card">
       <div class="section-toggle"><h2>カテゴリ別支出</h2><button onclick="toggleCard(this)">表示する</button></div>
@@ -871,6 +957,12 @@
       <button class="btn-sub" style="margin-top:10px;width:100%" onclick="createManualBackup()">今の状態を端末内に保存</button>
       <button class="btn-mini" style="margin-top:10px;width:100%" onclick="location.href='../'">現行版へ戻る</button>
       <button class="btn-sub" style="margin-top:10px;width:100%" onclick="exportData()">バックアップをダウンロード（ファイル）</button>
+      <div class="row2" style="margin-top:8px">
+        <div><button class="btn-mini" style="width:100%;padding:11px 0" onclick="exportCsv('month')">今月をCSVで書き出す</button></div>
+        <div><button class="btn-mini" style="width:100%;padding:11px 0" onclick="exportCsv('all')">全期間をCSVで書き出す</button></div>
+      </div>
+      <div class="empty" style="padding:7px 0 0">CSVはExcel・Numbers・スプレッドシートでそのまま開けます。</div>
+      <div id="receipt-storage" class="alert-ok" style="margin-top:12px"></div>
       <button class="btn-sub" style="margin-top:8px;width:100%" onclick="backupToClipboard()">バックアップをコピー（テキスト）</button>
       <button class="btn-sub" style="margin-top:8px;width:100%" onclick="restoreFromText()">バックアップから復元（テキストを貼り付け）</button>
       <button class="btn-mini" style="margin-top:12px;width:100%" onclick="$('import-file').click()">バックアップファイルから復元</button>
@@ -906,6 +998,11 @@
       <button class="btn-record" id="modal-ok">OK</button>
     </div>
   </div>
+</div>
+
+<div id="receipt-viewer" onclick="closeReceiptViewer()">
+  <button type="button" onclick="closeReceiptViewer()">閉じる</button>
+  <img id="receipt-viewer-img" alt="レシートの写真">
 </div>
 
 <div id="toast"></div>
@@ -2794,9 +2891,173 @@ function renderDonut(elId, entriesIn, masterList, emptyMsg) {
   $(elId).innerHTML = `<div class="donut-wrap">${svg}<div class="legend">${legend}</div></div>`;
 }
 
+/* ---------- 月またぎ分析 ---------- */
+let trendMonths = 6;
+let trendTableOpen = false;
 let recentHistoryExpanded = false;
 let historyOrderingDate = null;
 let historyOrderingSurface = null;
+
+function setTrendMonths(n) { trendMonths = n; renderTrend(); }
+function toggleTrendTable() { trendTableOpen = !trendTableOpen; renderTrend(); }
+function jumpToMonth(y, m) { view = { y, m }; render(); window.scrollTo(0, 0); }
+
+// 表示月を最後尾に、そこから遡って count か月ぶんの収支を集計する
+function monthlyTotals(count) {
+  const months = [];
+  let y = view.y, m = view.m;
+  for (let i = 0; i < count; i++) { months.unshift([y, m]); [y, m] = shiftYM(y, m, -1); }
+  return months.map(([yy, mm]) => {
+    const ym = `${yy}-${pad2(mm)}`;
+    let income = 0, expense = 0;
+    for (const t of S.transactions) {
+      if (!t.date.startsWith(ym)) continue;
+      if (t.type === 'income') income += t.amount;
+      else if (t.type === 'expense') expense += t.amount;
+    }
+    return { y: yy, m: mm, ym, income, expense, balance: income - expense };
+  });
+}
+
+// 上端だけ角を丸めた棒（下端は基線に接地させる）
+function barTopRounded(x, top, w, h, r) {
+  const n = v => Number(v).toFixed(2);
+  const rad = Math.max(0, Math.min(r, w / 2, h));
+  const base = top + h;
+  return `M ${n(x)} ${n(base)} V ${n(top + rad)} Q ${n(x)} ${n(top)} ${n(x + rad)} ${n(top)} `
+       + `H ${n(x + w - rad)} Q ${n(x + w)} ${n(top)} ${n(x + w)} ${n(top + rad)} V ${n(base)} Z`;
+}
+
+const signedYen = v => (v === 0 ? '' : v < 0 ? '−' : '+') + yen(Math.abs(v));
+
+function renderTrend() {
+  const rows = monthlyTotals(trendMonths);
+  $('trend-range').querySelectorAll('button')
+    .forEach(b => b.classList.toggle('active', Number(b.dataset.months) === trendMonths));
+
+  if (!rows.some(r => r.income || r.expense)) {
+    $('trend-chart').innerHTML = '<div class="empty">この期間の記録はまだありません。記帳がたまると月ごとの推移が見られます</div>';
+    $('trend-stats').innerHTML = '';
+    $('trend-table').innerHTML = '';
+    $('trend-table-toggle').style.display = 'none';
+    return;
+  }
+  $('trend-table-toggle').style.display = '';
+  $('trend-table-toggle').textContent = trendTableOpen ? '表を閉じる' : '数字を表で見る';
+
+  const W = 300, TOP = 12, BOTTOM = 84, LABEL_Y = 95;
+  const peak = Math.max(1, ...rows.map(r => Math.max(r.income, r.expense)));
+  const groupW = W / rows.length;
+  const barW = Math.min(13, Math.max(4, groupW * 0.26));
+  const scale = v => v / peak * (BOTTOM - TOP);
+
+  const groups = rows.map((r, i) => {
+    const cx = groupW * (i + 0.5);
+    const eh = scale(r.expense), ih = scale(r.income);
+    const current = r.ym === monthPrefix();
+    // 支出と収入のあいだは 2 単位あけて、隣り合う面が溶け合わないようにする
+    const ex = cx - barW - 1, ix = cx + 1;
+    const label = `${r.m}月`;
+    return `
+      <g class="trend-month ${current ? 'current' : ''}" onclick="jumpToMonth(${r.y}, ${r.m})" role="button" tabindex="0"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();jumpToMonth(${r.y}, ${r.m});}">
+        <title>${r.y}年${r.m}月　支出 ${yen(r.expense)}／収入 ${yen(r.income)}／収支 ${signedYen(r.balance)}</title>
+        <rect class="month-bg" x="${(groupW * i).toFixed(2)}" y="${TOP - 6}" width="${groupW.toFixed(2)}" height="${BOTTOM - TOP + 20}" rx="4"/>
+        ${r.expense > 0 ? `<path class="bar-expense" d="${barTopRounded(ex, BOTTOM - eh, barW, eh, 2.5)}"/>` : ''}
+        ${r.income > 0 ? `<path class="bar-income" d="${barTopRounded(ix, BOTTOM - ih, barW, ih, 2.5)}"/>` : ''}
+        <text class="month-label" x="${cx.toFixed(2)}" y="${LABEL_Y}" text-anchor="middle">${label}</text>
+      </g>`;
+  }).join('');
+
+  const summary = rows.map(r => `${r.y}年${r.m}月は支出${yen(r.expense)}、収入${yen(r.income)}`).join('。');
+  $('trend-chart').innerHTML = `
+    <svg class="trend-chart" viewBox="0 0 ${W} 100" role="img" aria-label="月ごとの収入と支出の推移。${esc(summary)}">
+      <text class="peak-text" x="0" y="8">${yen(peak)}</text>
+      <line class="grid" x1="0" y1="${TOP}" x2="${W}" y2="${TOP}" stroke-dasharray="3 3"/>
+      ${groups}
+      <line class="grid" x1="0" y1="${BOTTOM}" x2="${W}" y2="${BOTTOM}"/>
+    </svg>
+    <div class="trend-legend">
+      <span><span class="dot" style="background:var(--expense)"></span>支出</span>
+      <span><span class="dot" style="background:var(--income)"></span>収入</span>
+    </div>
+    <div class="trend-hint">棒をタップするとその月の履歴に移動します。</div>`;
+
+  const current = rows[rows.length - 1];
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  const withExpense = rows.filter(r => r.expense > 0);
+  const avgExpense = withExpense.length
+    ? Math.round(withExpense.reduce((s, r) => s + r.expense, 0) / withExpense.length) : 0;
+  const peakRow = rows.reduce((a, b) => (b.expense > a.expense ? b : a), rows[0]);
+  const diff = prev ? current.expense - prev.expense : null;
+  $('trend-stats').innerHTML = `
+    <div class="trend-stat"><span>平均支出（記録のある月）</span><strong>${yen(avgExpense)}</strong></div>
+    <div class="trend-stat"><span>前月比</span><strong>${diff === null ? '—' : signedYen(diff)}</strong></div>
+    <div class="trend-stat"><span>いちばん使った月</span><strong>${peakRow.expense ? `${peakRow.m}月 ${yen(peakRow.expense)}` : '—'}</strong></div>`;
+
+  $('trend-table').innerHTML = trendTableOpen ? `
+    <div class="trend-table-wrap">
+      <table class="trend-table">
+        <thead><tr><th>月</th><th>収入</th><th>支出</th><th>収支</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr><td>${r.y}年${r.m}月</td>
+              <td class="${r.income ? 'income' : 'zero'}">${yen(r.income)}</td>
+              <td class="${r.expense ? 'expense' : 'zero'}">${yen(r.expense)}</td>
+              <td class="${r.balance ? '' : 'zero'}">${signedYen(r.balance)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
+}
+
+// 上位カテゴリについて「表示月」と「それ以前の平均」を比べる
+function categoryMoves(rows) {
+  const ymSet = new Set(rows.map(r => r.ym));
+  const perCategory = new Map();
+  for (const t of S.transactions) {
+    if (t.type !== 'expense') continue;
+    const ym = t.date.slice(0, 7);
+    if (!ymSet.has(ym)) continue;
+    const cat = t.category || 'その他';
+    if (!perCategory.has(cat)) perCategory.set(cat, new Map());
+    const byYm = perCategory.get(cat);
+    byYm.set(ym, (byYm.get(ym) || 0) + t.amount);
+  }
+  const currentYm = rows[rows.length - 1].ym;
+  const pastYms = rows.slice(0, -1).map(r => r.ym);
+  return [...perCategory].map(([cat, byYm]) => ({
+    cat,
+    now: byYm.get(currentYm) || 0,
+    avg: pastYms.length ? pastYms.reduce((s, ym) => s + (byYm.get(ym) || 0), 0) / pastYms.length : 0,
+    total: [...byYm.values()].reduce((s, v) => s + v, 0),
+  })).sort((a, b) => b.total - a.total).slice(0, 8);
+}
+
+function renderTrendCategories() {
+  const rows = monthlyTotals(trendMonths);
+  const moves = categoryMoves(rows);
+  if (!moves.length) {
+    $('trend-category').innerHTML = '<div class="empty">この期間の支出がまだありません</div>';
+    return;
+  }
+  const past = trendMonths - 1;
+  const html = moves.map(mv => {
+    const scale = Math.max(mv.now, mv.avg, 1);
+    const delta = Math.round(mv.now - mv.avg);
+    const cls = Math.abs(delta) < 100 ? 'flat' : delta > 0 ? 'up' : 'down';
+    const text = mv.avg === 0 && mv.now > 0 ? '新しい出費' : Math.abs(delta) < 100 ? '±0' : signedYen(delta);
+    return `
+      <div class="cat-move">
+        <span class="cname">${esc(mv.cat)}</span>
+        <span class="cbar" role="img" aria-label="今月 ${yen(mv.now)}、過去${past}か月平均 ${yen(Math.round(mv.avg))}">
+          <span style="width:${(mv.now / scale * 100).toFixed(1)}%"></span>
+          <i style="left:calc(${(mv.avg / scale * 100).toFixed(1)}% - 1px)"></i>
+        </span>
+        <span class="cdelta ${cls}">${text}</span>
+      </div>`;
+  }).join('');
+  $('trend-category').innerHTML = `
+    ${html}
+    <div class="trend-hint">バーが表示月の金額、細い縦線が過去${past}か月の平均です。右の数字は平均との差。</div>`;
+}
 
 function transactionOrderValue(t) {
   if (t.dayOrder !== null && t.dayOrder !== undefined && t.dayOrder !== '') {
@@ -2817,7 +3078,7 @@ function transactionEntryGroups(transactions) {
       grouped.set(key, {
         key, id: t.id, date: t.date, type: t.type, category: t.category, memo: t.memo || '',
         amount: 0, createdAt: Number(t.createdAt || 0), methodIds: [], toId: t.toId || null,
-        order: transactionOrderValue(t), transactions: [],
+        receiptId: t.receiptId || null, order: transactionOrderValue(t), transactions: [],
       });
     }
     const row = grouped.get(key);
@@ -2826,6 +3087,7 @@ function transactionEntryGroups(transactions) {
     row.createdAt = Math.max(row.createdAt, Number(t.createdAt || 0));
     row.order = Math.min(row.order, transactionOrderValue(t));
     if (t.methodId && !row.methodIds.includes(t.methodId)) row.methodIds.push(t.methodId);
+    if (!row.receiptId && t.receiptId) row.receiptId = t.receiptId;
   }
   return [...grouped.values()];
 }
@@ -2966,7 +3228,7 @@ function renderRecentHistory() {
       const isIncome = row.type === 'income';
       const name = isTransfer ? (row.memo || '振替') : (row.memo || row.category);
       const method = recentHistoryMethod(row);
-      const sub = `${row.memo && !isTransfer ? `${row.category}・` : ''}${method}`;
+      const sub = `${row.memo && !isTransfer ? `${row.category}・` : ''}${method}${row.receiptId ? '・レシートあり' : ''}`;
       const prefix = isTransfer ? '⇄ ' : isIncome ? '+' : '−';
       return `<button class="recent-tx" onclick="editTx('${row.id}')" aria-label="${esc(name)} ${yen(row.amount)}を編集">
         <span class="recent-time">${recentHistoryTime(row, hasToday)}</span>
@@ -2993,6 +3255,8 @@ function toggleRecentHistory() {
 
 function renderHistory() {
   renderRecentHistory();
+  renderTrend();
+  renderTrendCategories();
   const monthTxs = txInViewMonth();
   const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -3043,7 +3307,7 @@ function renderHistory() {
             <div class="cat">${isTr ? '振替' : esc(t.category)}</div>
             ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
           </div>
-          <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}</span>
+          <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}${t.receiptId ? '<span class="tx-clip" title="レシートあり">🧾</span>' : ''}</span>
           <div class="amt ${isTr ? 'transfer' : t.type === 'income' ? 'income' : ''}">${isTr ? '⇄ ' : t.type === 'income' ? '+' : '−'}${yen(t.amount)}</div>
           <div class="tx-actions"><button aria-label="${t.memo || t.category}を複製" onclick="event.stopPropagation(); duplicateTx('${t.id}')">複製</button></div>
         </div>`;
@@ -3066,6 +3330,181 @@ function duplicateTx(id) {
   showView('entry');
   focusAmount();
   toast('内容を複製しました。金額や日付を確認してください');
+}
+
+/* ---------- レシート写真 ----------
+   画像はこの端末の IndexedDB にだけ置く。localStorage（5MB前後で頭打ち）にも
+   Supabaseのクラウド同期にも載せない。記帳側は receiptId しか持たないので、
+   別端末で開いたときは「写真なし」として扱われる。 */
+const RECEIPT_DB_NAME = 'nokorin-receipts';
+const RECEIPT_STORE = 'images';
+const RECEIPT_MAX_EDGE = 1280;
+const RECEIPT_QUALITY = 0.72;
+let receiptDbPromise = null;
+let entryReceiptId = null;          // 記帳フォームに今ついている写真
+let entryReceiptOriginalId = null;  // 編集を開始した時点でついていた写真
+let thumbObjectUrl = null;
+let viewerObjectUrl = null;
+
+const receiptsAvailable = () => typeof indexedDB !== 'undefined';
+
+function receiptDb() {
+  if (!receiptDbPromise) {
+    receiptDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(RECEIPT_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(RECEIPT_STORE)) req.result.createObjectStore(RECEIPT_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }).catch(err => { receiptDbPromise = null; throw err; });
+  }
+  return receiptDbPromise;
+}
+
+function receiptOp(mode, run) {
+  return receiptDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(RECEIPT_STORE, mode);
+    const req = run(tx.objectStore(RECEIPT_STORE));
+    tx.onabort = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => resolve(req ? req.result : undefined);
+  }));
+}
+
+const receiptPut = (id, blob) => receiptOp('readwrite', s => s.put(blob, id));
+const receiptGet = id => receiptOp('readonly', s => s.get(id));
+const receiptDelete = id => receiptOp('readwrite', s => s.delete(id));
+const receiptKeys = () => receiptOp('readonly', s => s.getAllKeys());
+
+// 長辺1280pxのJPEGに落とす。iPhoneのHEICもcanvas経由でJPEGになる
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const longest = Math.max(img.naturalWidth, img.naturalHeight) || 1;
+      const scale = Math.min(1, RECEIPT_MAX_EDGE / longest);
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encode failed'))), 'image/jpeg', RECEIPT_QUALITY);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+    img.src = url;
+  });
+}
+
+async function pickEntryReceipt(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (!receiptsAvailable()) { toast('⚠ このブラウザでは写真を保存できません'); return; }
+  try {
+    const blob = await compressImage(file);
+    const id = 'r_' + uid();
+    await receiptPut(id, blob);
+    entryReceiptId = id;
+    await renderEntryReceipt();
+    toast('レシートを添付しました ✓ 記帳すると保存されます');
+  } catch {
+    toast('⚠ 写真を読み込めませんでした');
+  }
+}
+
+function removeEntryReceipt() {
+  entryReceiptId = null;
+  renderEntryReceipt();
+}
+
+function onReceiptThumbClick() {
+  if (entryReceiptId) openReceiptViewer(entryReceiptId);
+  else $('receipt-file').click();
+}
+
+async function renderEntryReceipt() {
+  const thumb = $('receipt-thumb');
+  if (!thumb) return;
+  const note = $('receipt-note');
+  if (thumbObjectUrl) { URL.revokeObjectURL(thumbObjectUrl); thumbObjectUrl = null; }
+  $('receipt-remove').style.display = entryReceiptId ? '' : 'none';
+  $('receipt-pick').textContent = entryReceiptId ? '撮り直す' : 'レシートを撮る・選ぶ';
+  const showEmpty = message => {
+    thumb.classList.add('receipt-placeholder');
+    thumb.textContent = '🧾';
+    note.textContent = message;
+  };
+  if (!entryReceiptId) {
+    showEmpty('写真はこの端末の中だけに保存されます（クラウド同期には含まれません）');
+    return;
+  }
+  const wanted = entryReceiptId;
+  let blob = null;
+  try { blob = await receiptGet(wanted); } catch { /* 保存領域が使えない端末 */ }
+  if (wanted !== entryReceiptId) return;   // 待っている間に外された・差し替えられた
+  if (!blob) {
+    showEmpty('この端末には写真がありません。レシートは撮った端末の中にだけ残ります');
+    return;
+  }
+  thumbObjectUrl = URL.createObjectURL(blob);
+  thumb.classList.remove('receipt-placeholder');
+  thumb.innerHTML = `<img src="${thumbObjectUrl}" alt="添付したレシート">`;
+  note.textContent = 'タップすると大きく表示します。写真はこの端末の中だけに保存されます';
+}
+
+async function openReceiptViewer(id) {
+  if (!id) return;
+  let blob = null;
+  try { blob = await receiptGet(id); } catch { /* 保存領域が使えない端末 */ }
+  if (!blob) { toast('この端末には写真が見つかりませんでした'); return; }
+  if (viewerObjectUrl) URL.revokeObjectURL(viewerObjectUrl);
+  viewerObjectUrl = URL.createObjectURL(blob);
+  $('receipt-viewer-img').src = viewerObjectUrl;
+  $('receipt-viewer').style.display = 'flex';
+}
+
+function closeReceiptViewer() {
+  $('receipt-viewer').style.display = 'none';
+  $('receipt-viewer-img').removeAttribute('src');
+  if (viewerObjectUrl) { URL.revokeObjectURL(viewerObjectUrl); viewerObjectUrl = null; }
+}
+
+// どの記帳からも参照されなくなった写真を片づける（フォームを途中でやめた時など）
+async function cleanupOrphanReceipts() {
+  if (!receiptsAvailable()) return;
+  try {
+    const keys = await receiptKeys();
+    if (!keys.length) return;
+    const used = new Set(S.transactions.map(t => t.receiptId).filter(Boolean));
+    for (const key of keys) {
+      if (!used.has(key) && key !== entryReceiptId) await receiptDelete(key);
+    }
+  } catch { /* 使えない端末では何もしない */ }
+}
+
+async function renderReceiptStorage() {
+  const el = $('receipt-storage');
+  if (!el) return;
+  if (!receiptsAvailable()) { el.textContent = 'このブラウザではレシート写真を保存できません。'; return; }
+  try {
+    const keys = await receiptKeys();
+    if (!keys.length) {
+      el.textContent = 'レシート写真はまだありません。記帳画面の「レシートを撮る・選ぶ」から添付できます。';
+      return;
+    }
+    let bytes = 0;
+    for (const key of keys.slice(0, 300)) {
+      const blob = await receiptGet(key);
+      if (blob) bytes += blob.size;
+    }
+    el.textContent = `レシート写真 ${keys.length}件（約${(bytes / 1048576).toFixed(1)}MB）をこの端末に保存中。`
+      + 'バックアップのJSONやクラウド同期には含まれません。';
+  } catch {
+    el.textContent = 'レシート写真の保存状況を確認できませんでした。';
+  }
 }
 
 /* ---------- 記帳フォーム ---------- */
@@ -3166,6 +3605,9 @@ function resetEntryForm() {
   $('f-date').value = todayStr();
   splitRows = [];
   renderSplitRows();
+  entryReceiptId = null;
+  entryReceiptOriginalId = null;
+  renderEntryReceipt();
   $('entry-save').textContent = '記帳する';
   $('entry-delete').style.display = 'none';
 }
@@ -3211,6 +3653,10 @@ function saveEntry() {
     p.dayOrder = entryDayOrder;
     if (!('recurringId' in p)) p.recurringId = null;
   });
+  // 併用払いで分かれても、レシートは代表の1件にだけ持たせる
+  parts[0].receiptId = entryReceiptId || null;
+  const discardedReceiptId = entryReceiptOriginalId && entryReceiptOriginalId !== entryReceiptId
+    ? entryReceiptOriginalId : null;
   if (editingId) {
     const i = S.transactions.findIndex(t => t.id === editingId);
     const old = S.transactions[i];
@@ -3225,6 +3671,7 @@ function saveEntry() {
     toast('記帳しました ✓');
   }
   persist();
+  if (discardedReceiptId) receiptDelete(discardedReceiptId).catch(() => {});
   resetEntryForm();
   view = { y: Number(base.date.slice(0, 4)), m: Number(base.date.slice(5, 7)) };
   showView('home');
@@ -3251,6 +3698,9 @@ function editTx(id) {
   $('f-amount').value = group.reduce((sum, x) => sum + Number(x.amount || 0), 0);
   $('f-date').value = primary.date;
   $('f-memo').value = primary.memo || '';
+  entryReceiptId = group.map(x => x.receiptId).find(Boolean) || null;
+  entryReceiptOriginalId = entryReceiptId;
+  renderEntryReceipt();
   $('entry-save').textContent = '更新する';
   $('entry-delete').style.display = 'block';
   showView('entry');
@@ -3687,6 +4137,12 @@ function methodInUse(id) {
 }
 
 let editingBillingId = null;
+// 編集中の入力内容。クラウド同期などで render() が走ると method-list が
+// innerHTML で作り直され、保存前に選んだ締め日・支払日が消えてしまうため、
+// 画面ではなくここを正としてやり取りする。
+let editingBillingDraft = null;
+
+const DEFAULT_BILLING = { closingDay: 15, payMonthOffset: 1, payDay: 27 };
 
 function billingLabel(b) {
   const debit = b.debitMethodId || debitMethodId();
@@ -3699,44 +4155,70 @@ function dayOptions(selected) {
 }
 
 function billingEditor(m) {
-  const b = m.billing || { closingDay: 15, payMonthOffset: 1, payDay: 27 };
+  const b = editingBillingDraft || m.billing || DEFAULT_BILLING;
   const debitSel = b.debitMethodId || debitMethodId();
   const debitOptions = trackedMethods().map(t =>
     `<option value="${t.id}" ${t.id === debitSel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
   return `
     <div style="padding:4px 0 10px;border-bottom:1px solid var(--line)">
       <div class="row2">
-        <div><label>締め日</label><select id="b-closing">${dayOptions(b.closingDay)}</select></div>
+        <div><label>締め日</label><select id="b-closing" onchange="updateBillingDraft('closingDay', this.value)">${dayOptions(b.closingDay)}</select></div>
         <div><label>支払い月</label>
-          <select id="b-offset">
+          <select id="b-offset" onchange="updateBillingDraft('payMonthOffset', this.value)">
             <option value="1" ${b.payMonthOffset !== 2 ? 'selected' : ''}>翌月</option>
             <option value="2" ${b.payMonthOffset === 2 ? 'selected' : ''}>翌々月</option>
           </select>
         </div>
-        <div><label>支払日</label><select id="b-payday">${dayOptions(b.payDay)}</select></div>
+        <div><label>支払日</label><select id="b-payday" onchange="updateBillingDraft('payDay', this.value)">${dayOptions(b.payDay)}</select></div>
       </div>
       <label>引き落とし口座（支払日にここから残高が引かれます）</label>
-      <select id="b-debit">${debitOptions || '<option value="">（現金・銀行の支払い方法がありません）</option>'}</select>
+      <select id="b-debit" onchange="updateBillingDraft('debitMethodId', this.value)">${debitOptions || '<option value="">（現金・銀行の支払い方法がありません）</option>'}</select>
       <div class="row2" style="margin-top:10px">
         <div><button class="btn-sub" style="width:100%;padding:10px 0" onclick="saveBilling('${m.id}')">保存</button></div>
-        <div><button class="btn-mini" style="width:100%;padding:10px 0" onclick="editingBillingId=null;render()">キャンセル</button></div>
+        <div><button class="btn-mini" style="width:100%;padding:10px 0" onclick="closeBilling()">キャンセル</button></div>
       </div>
+      <div class="empty" style="padding:8px 0 0">保存すると、これまでの記帳も新しい締め日・支払日で数え直します。</div>
     </div>`;
 }
 
-function openBilling(id) { editingBillingId = id; render(); }
+function openBilling(id) {
+  const m = S.paymentMethods.find(x => x.id === id);
+  editingBillingId = id;
+  editingBillingDraft = { ...DEFAULT_BILLING, ...(m && m.billing ? m.billing : {}) };
+  if (!editingBillingDraft.debitMethodId) editingBillingDraft.debitMethodId = debitMethodId();
+  render();
+}
+
+function closeBilling() {
+  editingBillingId = null;
+  editingBillingDraft = null;
+  render();
+}
+
+function updateBillingDraft(field, value) {
+  if (!editingBillingDraft) return;
+  editingBillingDraft[field] = field === 'debitMethodId' ? (value || null) : Number(value);
+}
 
 function saveBilling(id) {
   const m = S.paymentMethods.find(m => m.id === id);
+  if (!m) return;
+  // 画面ではなく下書きを正とする（再描画でselectが戻っていても選んだ内容が残る）
+  const draft = editingBillingDraft || {};
+  const pick = (field, elId) => {
+    const value = draft[field] !== undefined && draft[field] !== null ? draft[field] : $(elId)?.value;
+    return Number(value);
+  };
   m.billing = {
-    closingDay: Number($('b-closing').value),
-    payMonthOffset: Number($('b-offset').value),
-    payDay: Number($('b-payday').value),
-    debitMethodId: $('b-debit').value || null,
+    closingDay: pick('closingDay', 'b-closing'),
+    payMonthOffset: pick('payMonthOffset', 'b-offset'),
+    payDay: pick('payDay', 'b-payday'),
+    debitMethodId: (draft.debitMethodId !== undefined ? draft.debitMethodId : $('b-debit')?.value) || null,
   };
   editingBillingId = null;
+  editingBillingDraft = null;
   persist(); render();
-  toast('設定しました ✓ ホームで引き落とし額を確認できます');
+  toast('設定しました ✓ これまでの記帳も新しい締め日で数え直しました');
 }
 
 function renderSettings() {
@@ -3785,6 +4267,7 @@ function renderSettings() {
     .map(d => `<option value="${d}">${d}日</option>`).join('');
   renderMoodSettings();
   renderBackupStatus();
+  renderReceiptStorage();
   renderCloudStatus();
 }
 
@@ -3943,13 +4426,60 @@ async function restoreFromText() {
   }
 }
 
-function exportData() {
-  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `kakeibo-backup-${todayStr()}.json`;
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+  // iOS Safari はクリック直後に解放するとダウンロードが始まらないことがある
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function exportData() {
+  downloadBlob(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }), `kakeibo-backup-${todayStr()}.json`);
+}
+
+/* ---------- CSV書き出し ---------- */
+const CSV_COLUMNS = ['日付', '種別', '金額', 'カテゴリ', '支払い方法', '移動先', 'メモ', '併用ID', 'レシート'];
+const CSV_TYPE_LABEL = { expense: '支出', income: '収入', transfer: '振替' };
+
+function csvCell(value) {
+  const s = String(value ?? '');
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function transactionsToCsv(txs) {
+  const rows = txs.slice()
+    .sort((a, b) => a.date.localeCompare(b.date)
+      || transactionOrderValue(a) - transactionOrderValue(b)
+      || Number(a.createdAt || 0) - Number(b.createdAt || 0))
+    .map(t => [
+      t.date,
+      CSV_TYPE_LABEL[t.type] || t.type,
+      t.amount,
+      t.type === 'transfer' ? '' : (t.category || ''),
+      methodName(t.methodId),
+      t.toId ? methodName(t.toId) : '',
+      t.memo || '',
+      t.splitId || '',
+      t.receiptId ? 'あり' : '',
+    ]);
+  return [CSV_COLUMNS, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+}
+
+function exportCsv(scope) {
+  const txs = scope === 'month' ? txInViewMonth() : S.transactions;
+  if (!txs.length) {
+    toast(scope === 'month' ? 'この月の記録はまだありません' : '書き出す記録がまだありません');
+    return;
+  }
+  const name = scope === 'month' ? `nokorin-${monthPrefix()}.csv` : `nokorin-all-${todayStr()}.csv`;
+  // 先頭のBOMがないと Excel が UTF-8 と判定せず日本語が文字化けする
+  downloadBlob(new Blob(['\ufeff' + transactionsToCsv(txs)], { type: 'text/csv;charset=utf-8' }), name);
+  toast(`${txs.length}件をCSVに書き出しました ✓`);
 }
 
 function importData(input) {
@@ -4072,6 +4602,7 @@ function init() {
   showView('home');
   if (migrated) toast('現行版のデータをv2へコピーしました ✓');
   if (recovered) toast('保存データをバックアップから復旧しました ✓');
+  cleanupOrphanReceipts();
 }
 init();
 initializeCloud();
