@@ -153,7 +153,7 @@
   .credit-live-stat strong { display:block; margin-top:2px; color:var(--text); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .credit-live-note { margin-top:9px; color:var(--muted); font-size:11px; line-height:1.5; }
   .credit-live-auto { margin-top:3px; color:var(--muted); font-size:11px; font-weight:700; }
-  .credit-live-actions { display:flex; justify-content:flex-end; gap:6px; margin-top:10px; }
+  .credit-live-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:10px; }
   .credit-setup { text-align:center; padding:6px 2px 2px; color:var(--muted); font-size:12px; line-height:1.6; }
   .credit-setup .btn-sub { margin-top:9px; }
   .quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -238,7 +238,7 @@
   .credit-bill-row .info { flex-basis:170px; }
   .credit-bill-amount { text-align:right; }
   .credit-bill-auto { margin-top:2px; color:var(--muted); font-size:10px; white-space:nowrap; }
-  .credit-bill-actions { width:100%; display:flex; justify-content:flex-end; gap:6px; }
+  .credit-bill-actions { width:100%; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
   .chip {
     font-size: 11px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600;
   }
@@ -2322,6 +2322,15 @@ function billAdjustmentFor(method, py, pm) {
   return { key, amount, updatedAt: typeof raw === 'object' ? raw.updatedAt || null : null };
 }
 
+// 引き落とし月ごとに「ポイントで払う額」を予約しておく。手動調整と違い、
+// 利用が増減しても「自動集計 − ポイント」で追従する
+function billPointsFor(method, py, pm) {
+  const raw = method.billPoints && method.billPoints[billAdjustmentKey(py, pm)];
+  if (raw === null || raw === undefined) return 0;
+  const amount = Math.round(Number(typeof raw === 'object' ? raw.amount : raw));
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
 // 未記帳のクレカ固定費を、該当する利用期間の見込みとして集計
 function scheduledCreditRecurringForBill(method, start, end) {
   const items = [];
@@ -2352,11 +2361,18 @@ function expectedBillFor(method, py, pm) {
     ? { items:[], amount:0 }
     : scheduledCreditRecurringForBill(method, bill.start, bill.end);
   const calculatedAmount = bill.amount + scheduled.amount;
+  const pointsReserved = billPointsFor(method, py, pm);
+  // 請求額より多いポイントは使えないので、超えた分は充当しない
+  const pointsApplied = Math.min(pointsReserved, calculatedAmount);
+  const autoAmount = calculatedAmount - pointsApplied;
   const adjustment = billAdjustmentFor(method, py, pm);
   return {
     ...bill,
-    amount:adjustment ? adjustment.amount : calculatedAmount,
+    amount:adjustment ? adjustment.amount : autoAmount,
     calculatedAmount,
+    autoAmount,
+    pointsReserved,
+    pointsApplied,
     manuallyAdjusted:Boolean(adjustment),
     adjustmentKey:billAdjustmentKey(py, pm),
     paymentYear:py,
@@ -2455,8 +2471,8 @@ function upcomingPayments(days) {
       if (!残高に反映済み && b.payDate >= today && b.payDate <= end && b.amount > 0)
         items.push({ date: b.payDate, name: `${c.name} 引き落とし`, amount: b.amount, methodId: debitId,
                      sourceOrder: 0, calcOrder: automaticOrder++,
-                     note: b.manuallyAdjusted ? '調整済み' : b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'),
-                     noteClass: b.manuallyAdjusted ? 'adjusted' : b.settled ? 'done' : 'upcoming' });
+                     note: b.manuallyAdjusted ? '調整済み' : b.pointsApplied ? 'ポイント充当' : b.settled ? '確定' : (b.scheduledFixedCount ? '見込み' : '集計中'),
+                     noteClass: b.manuallyAdjusted || b.pointsApplied ? 'adjusted' : b.settled ? 'done' : 'upcoming' });
     }
   }
   for (const r of S.recurring) {
@@ -2656,7 +2672,7 @@ async function editCreditBillAmount(methodId, py, pm) {
   if (!card || !card.billing) return;
   const bill = expectedBillFor(card, py, pm);
   const val = await appPrompt(
-    `「${card.name}」${fmtMD(bill.payDate)}引き落とし分の予定額（円）\n\n自動集計: ${yen(bill.calculatedAmount)}\nポイント充当・一部先払い後に、実際に引き落とされる予定額を入力してください。\n空欄で自動計算に戻します。`,
+    `「${card.name}」${fmtMD(bill.payDate)}引き落とし分の予定額（円）\n\n自動集計: ${yen(bill.calculatedAmount)}${bill.pointsApplied ? `（ポイント ${yen(bill.pointsApplied)} を引くと ${yen(bill.autoAmount)}）` : ''}\n一部先払いなどの後に、実際に引き落とされる予定額を入力してください。\n空欄で自動計算に戻します。`,
     String(bill.amount)
   );
   if (val == null) return;
@@ -2668,7 +2684,7 @@ async function editCreditBillAmount(methodId, py, pm) {
     const amount = Math.round(Number(val.replace(/[,，¥\s円]/g, '')));
     if (!Number.isFinite(amount) || amount < 0) { toast('0円以上の数字で入力してください'); return; }
     card.billAdjustments = card.billAdjustments || {};
-    if (amount === bill.calculatedAmount) delete card.billAdjustments[key];
+    if (amount === bill.autoAmount) delete card.billAdjustments[key];
     else card.billAdjustments[key] = {
       amount,
       updatedAt:new Date().toISOString(),
@@ -2687,6 +2703,46 @@ async function editCreditBillAmount(methodId, py, pm) {
   render();
   const updated = billAdjustmentFor(card, py, pm);
   toast(updated ? `引き落とし予定を ${yen(updated.amount)} に調整しました ✓` : '自動計算に戻しました ✓');
+}
+
+async function editCreditBillPoints(methodId, py, pm) {
+  const card = S.paymentMethods.find(m => m.id === methodId && m.type === 'credit');
+  if (!card || !card.billing) return;
+  const bill = expectedBillFor(card, py, pm);
+  const val = await appPrompt(
+    `「${card.name}」${fmtMD(bill.payDate)}引き落とし分にポイントで払う額（円）\n\n今の自動集計: ${yen(bill.calculatedAmount)}\nこの額を引いた残りを引き落とし予定にします。あとで利用を記帳しても「集計額 − ポイント」で自動的に計算し直します。\n空欄か0でポイント充当をやめます。`,
+    bill.pointsReserved ? String(bill.pointsReserved) : ''
+  );
+  if (val == null) return;
+  const before = card.billPoints ? structuredClone(card.billPoints) : null;
+  const key = billAdjustmentKey(py, pm);
+  const amount = val.trim() === '' ? 0 : Math.round(Number(val.replace(/[,，¥\s円ptポイント]/g, '')));
+  if (!Number.isFinite(amount) || amount < 0) { toast('0以上の数字で入力してください'); return; }
+  if (amount === 0) {
+    if (card.billPoints) delete card.billPoints[key];
+  } else {
+    card.billPoints = card.billPoints || {};
+    card.billPoints[key] = { amount, updatedAt:new Date().toISOString() };
+  }
+  if (card.billPoints && !Object.keys(card.billPoints).length) delete card.billPoints;
+  if (!persist()) {
+    if (before) card.billPoints = before;
+    else delete card.billPoints;
+    return;
+  }
+  render();
+  if (!amount) { toast('ポイント充当をやめました ✓'); return; }
+  const updated = expectedBillFor(card, py, pm);
+  toast(updated.manuallyAdjusted
+    ? `ポイント ${yen(amount)} を予約しました ✓（手動で調整した額が優先されています）`
+    : `ポイント ${yen(amount)} を引いて ${yen(updated.amount)} にしました ✓`);
+}
+
+// 請求行の下に出す「自動 ¥X − ポイント ¥Y」の補足
+function creditBillAutoNote(b, prefix) {
+  if (b.manuallyAdjusted) return `${prefix} ${yen(b.calculatedAmount)}${b.pointsApplied ? `・ポイント ${yen(b.pointsApplied)} 予約中` : ''}`;
+  if (b.pointsApplied) return `${prefix} ${yen(b.calculatedAmount)} − ポイント ${yen(b.pointsApplied)}`;
+  return '';
 }
 
 function resetCreditBillAmount(methodId, py, pm) {
@@ -2741,11 +2797,12 @@ function renderCreditBills() {
         <div class="due-item credit-bill-row">
           <div class="info">
             <div class="name">${esc(c.name)}</div>
-            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.manuallyAdjusted ? '・ポイント／先払い反映' : ''}</div>
+            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.manuallyAdjusted ? '・手動で調整' : ''}${b.pointsReserved > b.pointsApplied ? `・ポイント予約 ${yen(b.pointsReserved)} は請求額までしか使いません` : ''}</div>
           </div>
-          <div class="credit-bill-amount"><div class="amt">${yen(b.amount)}</div>${b.manuallyAdjusted ? `<div class="credit-bill-auto">自動 ${yen(b.calculatedAmount)}</div>` : ''}</div>
-          ${b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+          <div class="credit-bill-amount"><div class="amt">${yen(b.amount)}</div>${creditBillAutoNote(b, '自動') ? `<div class="credit-bill-auto">${creditBillAutoNote(b, '自動')}</div>` : ''}</div>
+          ${b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.pointsApplied ? '<span class="chip adjusted">ポイント充当</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
           <div class="credit-bill-actions">
+            <button class="btn-mini" onclick="editCreditBillPoints('${c.id}',${py},${pm})">${b.pointsReserved ? 'ポイントを変更' : 'ポイント分を引く'}</button>
             <button class="btn-mini" onclick="editCreditBillAmount('${c.id}',${py},${pm})">支払額を調整</button>
             ${b.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${c.id}',${py},${pm})">自動に戻す</button>` : ''}
           </div>
@@ -2803,13 +2860,15 @@ function renderCollectingCards(cards) {
   const countText = bill.scheduledFixedCount ? `${bill.count}件＋予定${bill.scheduledFixedCount}件` : `${bill.count}件`;
   const billNote = bill.manuallyAdjusted
     ? `自動集計は ${yen(bill.calculatedAmount)}。ポイント・先払い後の予定額を手動で設定しています。新しい利用を記帳しても手動額は自動で変わらないため、必要なら再調整してください。PayPayやポイント残高も管理している場合は、使った分を「振替」でカードへ移すと残高にも反映できます。`
+    : bill.pointsApplied
+    ? `記帳済みの利用 ${yen(bill.calculatedAmount)} からポイント ${yen(bill.pointsApplied)} を引いた額です。利用を記帳するとポイント分を引いたまま自動で増えます。`
     : bill.scheduledFixedCount
     ? `未記帳のクレカ固定費 ${bill.scheduledFixedCount}件（${yen(bill.scheduledFixedAmount)}）を含む見込み。記帳後は実際の金額に自動で置き換わります。`
     : `${fmtMD(bill.start)}〜${fmtMD(bill.end)}の記帳済み利用分。締め日まで金額が増える可能性があります。`;
   $('credit-collecting-detail').innerHTML = `
     <div class="credit-live-panel" role="tabpanel">
       <div class="credit-live-main">
-        <div><div class="credit-live-label">${bill.manuallyAdjusted ? '実際の引き落とし予定' : '現在の集計見込み'}</div><div class="credit-live-amount">${yen(bill.amount)}</div>${bill.manuallyAdjusted ? `<div class="credit-live-auto">自動集計 ${yen(bill.calculatedAmount)}</div>` : ''}</div>
+        <div><div class="credit-live-label">${bill.manuallyAdjusted ? '実際の引き落とし予定' : bill.pointsApplied ? 'ポイント充当後の見込み' : '現在の集計見込み'}</div><div class="credit-live-amount">${yen(bill.amount)}</div>${creditBillAutoNote(bill, '自動集計') ? `<div class="credit-live-auto">${creditBillAutoNote(bill, '自動集計')}</div>` : ''}</div>
         <div class="credit-live-days">${closingText}</div>
       </div>
       <div class="credit-cycle-track" aria-label="締め日までの進み具合"><span style="width:${progress}%"></span></div>
@@ -2820,6 +2879,7 @@ function renderCollectingCards(cards) {
       </div>
       <div class="credit-live-note">${billNote}</div>
       <div class="credit-live-actions">
+        <button class="btn-mini" onclick="editCreditBillPoints('${card.id}',${bill.paymentYear},${bill.paymentMonth})">${bill.pointsReserved ? 'ポイントを変更' : 'ポイント分を引く'}</button>
         <button class="btn-mini" onclick="editCreditBillAmount('${card.id}',${bill.paymentYear},${bill.paymentMonth})">支払額を調整</button>
         ${bill.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${card.id}',${bill.paymentYear},${bill.paymentMonth})">自動に戻す</button>` : ''}
       </div>
@@ -4607,6 +4667,6 @@ function init() {
 init();
 initializeCloud();
 </script>
-<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-08-12c カード支払額を調整可能に</div>
+<div style="text-align:center;color:#9aa8a6;font-size:11px;padding:4px 0 12px">バージョン: 2026-10-29 カード請求からポイント分を先に引けるように</div>
 </body>
 </html>
