@@ -352,6 +352,19 @@
   .history-tools input, .history-tools select { min-width:0; padding:9px 10px; }
   .history-tools input { flex:2; }
   .history-tools select { flex:1; }
+  .installment-wrap { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--bg); }
+  .installment-wrap h3 { margin:0 0 6px; font-size:14px; }
+  .installment-note { color:var(--muted); font-size:12px; line-height:1.6; }
+  .installment-table { width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; }
+  .installment-table th { color:var(--muted); font-weight:600; font-size:11.5px; text-align:right; padding:4px 6px; }
+  .installment-table th:first-child, .installment-table td:first-child { text-align:left; }
+  .installment-table td { text-align:right; padding:7px 6px; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .installment-table tr.pick { cursor:pointer; }
+  .installment-table tr.on td { background:#efeaff; font-weight:700; }
+  .installment-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .installment-actions button { flex:1; min-width:120px; }
+  .tx-installment { margin-left:4px; font-size:11px; color:var(--muted); }
+  .history-hit-summary { margin:-2px 2px 8px; color:var(--muted); font-size:12px; }
   .recent-history-card { padding-bottom:10px; border-color:#dedaff; background:linear-gradient(145deg,#fff 56%,#f3f0ff); }
   .recent-history-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:4px; }
   .recent-history-head h2 { margin:0; color:var(--text); font-size:16px; font-weight:800; }
@@ -620,6 +633,7 @@
           <div id="split-hint" style="font-size:12px;font-weight:600;margin-top:6px"></div>
           <button class="btn-mini" style="margin-top:8px" onclick="addSplitRow()">＋ ポイント等との併用払い</button>
         </div>
+        <div class="installment-wrap" id="installment-wrap" style="display:none"></div>
       </div>
       <div class="row2" id="f-transfer-wrap" style="display:none">
         <div><label>移動元（から）</label><select id="f-from"></select></div>
@@ -696,8 +710,10 @@
     </div>
     <div class="history-tools">
       <input id="history-search" type="search" placeholder="メモ・カテゴリを検索" oninput="renderHistory()">
+      <select id="history-scope" aria-label="検索する期間" onchange="renderHistory()"><option value="month">この月</option><option value="all">全期間</option></select>
       <select id="history-type" onchange="renderHistory()"><option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option><option value="transfer">振替</option></select>
     </div>
+    <div class="history-hit-summary" id="history-hit-summary" style="display:none"></div>
     <div id="history-list"></div>
   </div>
 
@@ -1018,6 +1034,7 @@ let currentView = 'home';
 let selectedCollectingCardId = null;
 let entryType = 'expense';
 let editingId = null;               // 編集中の記録ID
+let installmentDraft = null;        // 分割パネルで選んでいる回数・開始月・手数料
 let entryRecurringId = null;        // 固定費からの記帳
 let editingRecId = null;            // 編集中の固定費ID
 let cloudClient = null;
@@ -2301,13 +2318,100 @@ function billFor(method, py, pm) {
   const [qy, qm] = shiftYM(cy, cm, -1);
   const prevEnd = clampDate(qy, qm, b.closingDay);           // 前回の締め日
   // クレカ払いの支出＋クレカからのチャージ（振替）が請求に乗る
-  const amount = S.transactions
-    .filter(t => (t.type === 'expense' || t.type === 'transfer') && t.methodId === method.id && t.date > prevEnd && t.date <= end)
+  // 分割に変えた利用とその手数料は、この1回分ではなく下の分割回で数える
+  const excluded = installmentExcludedTxIds();
+  const lumpAmount = S.transactions
+    .filter(t => (t.type === 'expense' || t.type === 'transfer') && t.methodId === method.id && t.date > prevEnd && t.date <= end && !excluded.has(t.id))
     .reduce((s, t) => s + t.amount, 0);
+  const inst = installmentPortionsFor(method, py, pm);
   const d = new Date(prevEnd + 'T00:00:00');
   d.setDate(d.getDate() + 1);
   const start = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  return { start, end, payDate: clampDate(py, pm, b.payDay), amount, settled: end < todayStr() };
+  return {
+    start, end, payDate: clampDate(py, pm, b.payDay), amount: lumpAmount + inst.amount, settled: end < todayStr(),
+    installmentAmount: inst.amount, installmentCount: inst.items.length,
+  };
+}
+
+/* ---------- あとから分割 ----------
+   買った日の支出（家計の集計）はそのまま。変わるのは引き落としだけで、
+   元の1回分の請求から外し、元金＋手数料を回数で割って毎月の請求に乗せる。
+   手数料は「手数料」カテゴリの支出として1件記帳し（変更した日付）、これも分割回に含める。 */
+const INSTALLMENT_COUNTS = [2, 3, 5, 6, 10, 12, 15, 18, 20, 24];
+const DEFAULT_INSTALLMENT_RATE = 15;
+const INSTALLMENT_FEE_CATEGORY = '手数料';
+
+function installmentRateOf(method) {
+  const r = Number(method?.billing?.installmentRate);
+  return Number.isFinite(r) && r >= 0 && r <= 30 ? r : DEFAULT_INSTALLMENT_RATE;
+}
+
+// 実質年率から手数料の目安を出す（元利均等）。2回払いは手数料なしのカードが多いので0円
+function installmentFeeEstimate(principal, count, ratePercent) {
+  if (!(principal > 0) || count <= 2 || !(ratePercent > 0)) return 0;
+  const r = ratePercent / 100 / 12;
+  const payment = principal * r / (1 - Math.pow(1 + r, -count));
+  return Math.max(0, Math.floor(payment * count - principal));
+}
+
+function ymAdd(ym, months) {
+  const [y, m] = shiftYM(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), months);
+  return `${y}-${pad2(m)}`;
+}
+
+// その利用が一括払いなら引き落とされるはずだった月
+function lumpPayYmFor(method, dateStr) {
+  const b = method.billing;
+  const y = Number(dateStr.slice(0, 4)), m = Number(dateStr.slice(5, 7));
+  const [cy, cm] = dateStr <= clampDate(y, m, b.closingDay) ? [y, m] : shiftYM(y, m, 1);
+  const [py, pm] = shiftYM(cy, cm, b.payMonthOffset);
+  return `${py}-${pad2(pm)}`;
+}
+
+// 各回の額。割り切れない端数は初回に乗せる
+function installmentSchedule(inst, principal) {
+  const total = principal + (inst.fee || 0);
+  const base = Math.floor(total / inst.count);
+  return Array.from({ length: inst.count }, (_, i) => ({
+    ym: ymAdd(inst.startYm, i), n: i + 1, amount: i === 0 ? total - base * (inst.count - 1) : base,
+  }));
+}
+
+// 今も有効な分割（元の利用がクレカの一括の支出として残っているもの）
+function activeInstallments() {
+  const out = [];
+  for (const inst of S.installments || []) {
+    const tx = S.transactions.find(t => t.id === inst.txId);
+    if (!tx || tx.type !== 'expense' || tx.splitId) continue;
+    const method = S.paymentMethods.find(m => m.id === tx.methodId && m.type === 'credit' && m.billing);
+    if (!method) continue;
+    out.push({ inst, tx, method });
+  }
+  return out;
+}
+
+function installmentForTx(txId) {
+  return activeInstallments().find(a => a.inst.txId === txId) || null;
+}
+
+function installmentExcludedTxIds() {
+  const ids = new Set();
+  for (const { inst } of activeInstallments()) {
+    ids.add(inst.txId);
+    if (inst.feeTxId) ids.add(inst.feeTxId);
+  }
+  return ids;
+}
+
+function installmentPortionsFor(method, py, pm) {
+  const ym = `${py}-${pad2(pm)}`;
+  const items = [];
+  for (const { inst, tx, method: m } of activeInstallments()) {
+    if (m.id !== method.id) continue;
+    const part = installmentSchedule(inst, tx.amount).find(x => x.ym === ym);
+    if (part) items.push({ txId: tx.id, n: part.n, count: inst.count, amount: part.amount });
+  }
+  return { items, amount: items.reduce((s, x) => s + x.amount, 0) };
 }
 
 function billAdjustmentKey(py, pm) { return `${py}-${pad2(pm)}`; }
@@ -2392,9 +2496,10 @@ function collectingBillFor(method) {
   const [cy, cm] = today <= closingThisMonth ? [y, m] : shiftYM(y, m, 1);
   const [py, pm] = shiftYM(cy, cm, method.billing.payMonthOffset);
   const bill = expectedBillFor(method, py, pm);
+  const excluded = installmentExcludedTxIds();
   const uses = S.transactions.filter(t =>
     (t.type === 'expense' || t.type === 'transfer') &&
-    t.methodId === method.id && t.date >= bill.start && t.date <= bill.end
+    t.methodId === method.id && t.date >= bill.start && t.date <= bill.end && !excluded.has(t.id)
   );
   return {
     ...bill,
@@ -2797,7 +2902,7 @@ function renderCreditBills() {
         <div class="due-item credit-bill-row">
           <div class="info">
             <div class="name">${esc(c.name)}</div>
-            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.manuallyAdjusted ? '・手動で調整' : ''}${b.pointsReserved > b.pointsApplied ? `・ポイント予約 ${yen(b.pointsReserved)} は請求額までしか使いません` : ''}</div>
+            <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.installmentCount ? `・分割${b.installmentCount}件 ${yen(b.installmentAmount)}込み` : ''}${b.manuallyAdjusted ? '・手動で調整' : ''}${b.pointsReserved > b.pointsApplied ? `・ポイント予約 ${yen(b.pointsReserved)} は請求額までしか使いません` : ''}</div>
           </div>
           <div class="credit-bill-amount"><div class="amt">${yen(b.amount)}</div>${creditBillAutoNote(b, '自動') ? `<div class="credit-bill-auto">${creditBillAutoNote(b, '自動')}</div>` : ''}</div>
           ${b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.pointsApplied ? '<span class="chip adjusted">ポイント充当</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
@@ -3330,7 +3435,8 @@ function renderHistory() {
   renderDonut('break-income', groupSum(monthTxs, t => t.category, 'income'), S.categories.income, 'この月の収入はまだありません');
   const q = ($('history-search')?.value || '').trim().toLowerCase();
   const type = $('history-type')?.value || 'all';
-  const txs = monthTxs.filter(t => {
+  const allPeriod = ($('history-scope')?.value || 'month') === 'all';
+  const txs = (allPeriod ? S.transactions : monthTxs).filter(t => {
     if (type !== 'all' && t.type !== type) return false;
     if (!q) return true;
     return [t.memo, t.category, methodName(t.methodId), methodName(t.toId)].join(' ').toLowerCase().includes(q);
@@ -3338,9 +3444,16 @@ function renderHistory() {
     || transactionOrderValue(a) - transactionOrderValue(b)
     || Number(a.createdAt || 0) - Number(b.createdAt || 0)
     || String(a.id).localeCompare(String(b.id)));
-  if (!txs.length) { $('history-list').innerHTML = `<div class="empty" style="padding:40px 0">${q || type !== 'all' ? '条件に一致する記録はありません' : 'この月の記録はありません'}</div>`; return; }
+  const hitSummary = $('history-hit-summary');
+  if (allPeriod && (q || type !== 'all') && txs.length) {
+    const spent = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    hitSummary.textContent = `全期間で${txs.length}件` + (spent ? `・支出の合計 ${yen(spent)}` : '');
+    hitSummary.style.display = '';
+  } else hitSummary.style.display = 'none';
+  if (!txs.length) { $('history-list').innerHTML = `<div class="empty" style="padding:40px 0">${q || type !== 'all' ? '条件に一致する記録はありません' : allPeriod ? 'まだ記録はありません' : 'この月の記録はありません'}</div>`; return; }
   const days = ['日','月','火','水','木','金','土'];
-  const canReorder = !q && type === 'all';
+  const canReorder = !q && type === 'all' && !allPeriod;
+  const thisYear = new Date().getFullYear();
   const byDate = new Map();
   for (const t of txs) {
     if (!byDate.has(t.date)) byDate.set(t.date, []);
@@ -3352,7 +3465,7 @@ function renderHistory() {
     const groups = canReorder ? dayEntryGroups(date) : [];
     const ordering = canReorder && historyOrderingDate === date && historyOrderingSurface === 'list' && groups.length > 1;
     html += `<div class="day-head history-day-head" id="history-day-${date}">
-      <span>${d.getMonth()+1}月${d.getDate()}日（${days[d.getDay()]}）</span>
+      <span>${allPeriod && d.getFullYear() !== thisYear ? d.getFullYear() + '年' : ''}${d.getMonth()+1}月${d.getDate()}日（${days[d.getDay()]}）</span>
       ${groups.length > 1 ? `<button class="btn-mini" onclick="toggleHistoryOrder('${date}', 'list')">${ordering ? '完了' : '順番変更'}</button>` : ''}
     </div>`;
     if (ordering) {
@@ -3367,13 +3480,19 @@ function renderHistory() {
             <div class="cat">${isTr ? '振替' : esc(t.category)}</div>
             ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
           </div>
-          <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}${t.receiptId ? '<span class="tx-clip" title="レシートあり">🧾</span>' : ''}</span>
+          <span class="method">${isTr ? esc(methodName(t.methodId)) + ' → ' + esc(methodName(t.toId)) : esc(methodName(t.methodId)) + (t.splitId ? '・併用' : '')}${installmentLabelFor(t)}${t.receiptId ? '<span class="tx-clip" title="レシートあり">🧾</span>' : ''}</span>
           <div class="amt ${isTr ? 'transfer' : t.type === 'income' ? 'income' : ''}">${isTr ? '⇄ ' : t.type === 'income' ? '+' : '−'}${yen(t.amount)}</div>
           <div class="tx-actions"><button aria-label="${t.memo || t.category}を複製" onclick="event.stopPropagation(); duplicateTx('${t.id}')">複製</button></div>
         </div>`;
     }
   }
   $('history-list').innerHTML = html;
+}
+
+function installmentLabelFor(t) {
+  if (t.type !== 'expense') return '';
+  const a = installmentForTx(t.id);
+  return a ? `<span class="tx-installment">${a.inst.count}回払い</span>` : '';
 }
 
 function duplicateTx(id) {
@@ -3626,6 +3745,7 @@ function setEntryType(type) {
   $('f-method-wrap').style.display = isTr ? 'none' : 'block';
   $('f-transfer-wrap').style.display = isTr ? 'flex' : 'none';
   $('split-wrap').style.display = type === 'expense' ? 'block' : 'none';
+  renderInstallmentPanel();
   if (isTr) {
     fillMethodSelect($('f-from'), $('f-from').value || debitMethodId());
     fillMethodSelect($('f-to'), $('f-to').value);
@@ -3654,6 +3774,221 @@ function renderEntryOptions() {
   if (!$('f-date').value) $('f-date').value = todayStr();
 }
 
+/* ---------- あとから分割（記帳画面のパネル） ---------- */
+function ymPayDate(method, ym) {
+  return clampDate(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), method.billing.payDay);
+}
+function ymLabel(ym) {
+  const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  return (y !== new Date().getFullYear() ? `${y}年` : '') + `${m}月`;
+}
+
+// 分割にできる状態か。理由つきで返す
+function installmentTarget(txId) {
+  const tx = S.transactions.find(t => t.id === txId);
+  if (!tx || tx.type !== 'expense' || tx.installmentFeeFor) return null;
+  const method = S.paymentMethods.find(m => m.id === tx.methodId);
+  if (!method || method.type !== 'credit') return null;
+  if (tx.splitId) return { tx, method, blocked: 'ポイント等と併用した支払いは分割にできません' };
+  if (!method.billing) return { tx, method, blocked: 'このカードの締め日・支払日が未設定です。「その他」タブで設定すると分割にできます' };
+  return { tx, method, blocked: null };
+}
+
+function ensureFeeCategory() {
+  const list = S.categories.expense;
+  if (list.includes(INSTALLMENT_FEE_CATEGORY)) return;
+  const other = list.indexOf('その他');
+  if (other >= 0) list.splice(other, 0, INSTALLMENT_FEE_CATEGORY);
+  else list.push(INSTALLMENT_FEE_CATEGORY);
+}
+
+function installmentFeeMemo(tx, count) {
+  return `分割手数料（${tx.memo || tx.category}・${count}回）`;
+}
+
+// 分割情報に合わせて手数料の記帳を作る・直す・消す
+function syncInstallmentFeeTx(inst, tx) {
+  const existing = inst.feeTxId ? S.transactions.find(t => t.id === inst.feeTxId) : null;
+  if (!inst.fee) {
+    if (existing) S.transactions = S.transactions.filter(t => t.id !== existing.id);
+    inst.feeTxId = null;
+    return;
+  }
+  ensureFeeCategory();
+  if (existing) {
+    Object.assign(existing, { amount: inst.fee, methodId: tx.methodId, memo: installmentFeeMemo(tx, inst.count) });
+    return;
+  }
+  const date = todayStr();
+  const feeTx = {
+    id: uid(), type: 'expense', date, amount: inst.fee, category: INSTALLMENT_FEE_CATEGORY,
+    methodId: tx.methodId, memo: installmentFeeMemo(tx, inst.count), createdAt: Date.now(),
+    dayOrder: nextDayOrder(date), recurringId: null, installmentFeeFor: inst.id,
+  };
+  S.transactions.push(feeTx);
+  inst.feeTxId = feeTx.id;
+}
+
+function removeInstallmentFor(txId) {
+  const inst = (S.installments || []).find(i => i.txId === txId);
+  if (!inst) return false;
+  if (inst.feeTxId) S.transactions = S.transactions.filter(t => t.id !== inst.feeTxId);
+  S.installments = S.installments.filter(i => i !== inst);
+  return true;
+}
+
+// 記録を更新した後、分割の前提（クレカの一括の支出）が崩れていないかを見て追従させる
+function syncInstallmentAfterEdit(txId) {
+  const inst = (S.installments || []).find(i => i.txId === txId);
+  if (!inst) return null;
+  const target = installmentTarget(txId);
+  if (!target || target.blocked) { removeInstallmentFor(txId); return 'removed'; }
+  if (!inst.feeManual) inst.fee = installmentFeeEstimate(target.tx.amount, inst.count, inst.rate);
+  syncInstallmentFeeTx(inst, target.tx);
+  return 'synced';
+}
+
+function installmentStartOptions(method, tx) {
+  const lump = lumpPayYmFor(method, tx.date);
+  return [0, 1, 2].map(i => ymAdd(lump, i)).filter(ym => ymPayDate(method, ym) >= todayStr());
+}
+
+function openInstallmentDraft() {
+  const target = installmentTarget(editingId);
+  if (!target || target.blocked) return;
+  const current = (S.installments || []).find(i => i.txId === editingId);
+  const starts = installmentStartOptions(target.method, target.tx);
+  installmentDraft = {
+    count: current ? current.count : 3,
+    startYm: current && starts.includes(current.startYm) ? current.startYm : starts[0],
+    feeInput: current && current.feeManual ? String(current.fee) : '',
+  };
+  renderInstallmentPanel();
+}
+
+function closeInstallmentDraft() { installmentDraft = null; renderInstallmentPanel(); }
+
+function updateInstallmentDraft(field, value) {
+  if (!installmentDraft) return;
+  installmentDraft[field] = field === 'count' ? Number(value) : value;
+  // 回数を変えたら、手で入れた手数料はその回数のものではなくなるので空に戻す
+  if (field === 'count') installmentDraft.feeInput = '';
+  renderInstallmentPanel();
+}
+
+function saveInstallment() {
+  const target = installmentTarget(editingId);
+  if (!target || target.blocked || !installmentDraft) return;
+  const { tx, method } = target;
+  const rate = installmentRateOf(method);
+  const feeText = String(installmentDraft.feeInput || '').trim();
+  const manualFee = feeText === '' ? null : Math.round(Number(feeText));
+  if (manualFee !== null && (!Number.isFinite(manualFee) || manualFee < 0)) { toast('手数料は0以上の数字で入力してください'); return; }
+  if (!installmentDraft.startYm) { toast('初回の引き落とし月を選んでください'); return; }
+  const before = JSON.stringify(S);
+  S.installments = S.installments || [];
+  let inst = S.installments.find(i => i.txId === tx.id);
+  if (!inst) { inst = { id: uid(), txId: tx.id, createdAt: Date.now(), feeTxId: null }; S.installments.push(inst); }
+  Object.assign(inst, {
+    count: installmentDraft.count, startYm: installmentDraft.startYm, rate,
+    fee: manualFee ?? installmentFeeEstimate(tx.amount, installmentDraft.count, rate),
+    feeManual: manualFee !== null,
+  });
+  syncInstallmentFeeTx(inst, tx);
+  if (!persist()) { S = normalizeData(JSON.parse(before)); return; }
+  installmentDraft = null;
+  render();
+  renderInstallmentPanel();
+  toastAction(`${inst.count}回払いにしました ✓`, '元に戻す', () => {
+    S = normalizeData(JSON.parse(before));
+    persist(); render(); renderInstallmentPanel();
+    toast('元に戻しました ✓');
+  });
+}
+
+async function cancelInstallment() {
+  if (!editingId || !await appConfirm('一括払いに戻しますか？手数料の記録も消えます')) return;
+  const before = JSON.stringify(S);
+  if (!removeInstallmentFor(editingId)) return;
+  if (!persist()) { S = normalizeData(JSON.parse(before)); return; }
+  installmentDraft = null;
+  render();
+  renderInstallmentPanel();
+  toastAction('一括払いに戻しました', '元に戻す', () => {
+    S = normalizeData(JSON.parse(before));
+    persist(); render(); renderInstallmentPanel();
+    toast('元に戻しました ✓');
+  });
+}
+
+function renderInstallmentPanel() {
+  const wrap = $('installment-wrap');
+  if (!wrap) return;
+  const target = editingId && entryType === 'expense' ? installmentTarget(editingId) : null;
+  if (!target) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  wrap.style.display = '';
+  if (target.blocked) {
+    wrap.innerHTML = `<h3>分割払い</h3><div class="installment-note">${esc(target.blocked)}</div>`;
+    return;
+  }
+  const { tx, method } = target;
+  const current = (S.installments || []).find(i => i.txId === tx.id);
+  const rate = installmentRateOf(method);
+  const starts = installmentStartOptions(method, tx);
+
+  if (!installmentDraft) {
+    if (current) {
+      const sched = installmentSchedule(current, tx.amount);
+      const locked = ymPayDate(method, current.startYm) < todayStr();
+      const last = sched[sched.length - 1];
+      wrap.innerHTML = `<h3>分割払い：${current.count}回</h3>
+        <div class="installment-note">
+          ${ymLabel(current.startYm)}〜${ymLabel(last.ym)}の引き落とし・毎月 ${yen(sched[sched.length > 1 ? 1 : 0].amount)}${sched.length > 1 && sched[0].amount !== sched[1].amount ? `（初回 ${yen(sched[0].amount)}）` : ''}<br>
+          手数料 ${yen(current.fee)}${current.feeManual ? '（明細の額）' : `（年${current.rate}%で計算した目安）`}・支払総額 ${yen(tx.amount + current.fee)}
+          ${locked ? '<br>初回の引き落としが済んでいるので、回数や開始月は変えられません' : ''}
+        </div>
+        ${locked ? '' : `<div class="installment-actions">
+          <button class="btn-mini" onclick="openInstallmentDraft()">回数・手数料を変える</button>
+          <button class="btn-mini" onclick="cancelInstallment()">一括払いに戻す</button>
+        </div>`}`;
+      return;
+    }
+    if (!starts.length) {
+      wrap.innerHTML = `<h3>分割払い</h3><div class="installment-note">この利用分はもう引き落とし済みなので、分割にはできません</div>`;
+      return;
+    }
+    wrap.innerHTML = `<h3>分割払い</h3>
+      <div class="installment-note">一括の引き落としがきつい時は、あとから分割に変えられます（${ymLabel(lumpPayYmFor(method, tx.date))}の引き落とし予定）</div>
+      <div class="installment-actions"><button class="btn-mini" onclick="openInstallmentDraft()">分割に変更する</button></div>`;
+    return;
+  }
+
+  const d = installmentDraft;
+  const rows = INSTALLMENT_COUNTS.map(n => {
+    const fee = installmentFeeEstimate(tx.amount, n, rate);
+    const sched = installmentSchedule({ count: n, startYm: d.startYm, fee }, tx.amount);
+    return `<tr class="pick${n === d.count ? ' on' : ''}" onclick="updateInstallmentDraft('count', ${n})">
+      <td>${n}回</td><td>${fee ? yen(fee) : '0円'}</td><td>${yen(sched[n > 1 ? 1 : 0].amount)}</td><td>${yen(tx.amount + fee)}</td></tr>`;
+  }).join('');
+  const startOpts = starts.map(ym => `<option value="${ym}" ${ym === d.startYm ? 'selected' : ''}>${ymLabel(ym)}（${fmtMD(ymPayDate(method, ym))}）</option>`).join('');
+  const autoFee = installmentFeeEstimate(tx.amount, d.count, rate);
+  wrap.innerHTML = `<h3>分割に変更：${yen(tx.amount)}</h3>
+    <div class="installment-note">回数を選んでください。手数料は年${rate}%で計算した目安です（カードの設定で変更できます）</div>
+    <table class="installment-table">
+      <thead><tr><th>回数</th><th>手数料</th><th>毎月</th><th>支払総額</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="row2">
+      <div><label>初回の引き落とし</label><select onchange="updateInstallmentDraft('startYm', this.value)">${startOpts}</select></div>
+      <div><label>手数料（明細の額）</label><input type="number" inputmode="numeric" placeholder="目安 ${autoFee}" value="${esc(d.feeInput)}" oninput="installmentDraft.feeInput = this.value"></div>
+    </div>
+    <div class="installment-note">明細で手数料が分かったら右の欄に入れると、その額で計算し直します。空欄なら目安のままです</div>
+    <div class="installment-actions">
+      <button class="btn-sub" onclick="saveInstallment()">${d.count}回払いにする</button>
+      <button class="btn-mini" onclick="closeInstallmentDraft()">やめる</button>
+    </div>`;
+}
+
 function resetEntryForm() {
   editingId = null; entryRecurringId = null;
   entryType = 'expense';
@@ -3665,6 +4000,8 @@ function resetEntryForm() {
   $('f-date').value = todayStr();
   splitRows = [];
   renderSplitRows();
+  installmentDraft = null;
+  renderInstallmentPanel();
   entryReceiptId = null;
   entryReceiptOriginalId = null;
   renderEntryReceipt();
@@ -3725,7 +4062,8 @@ function saveEntry() {
     parts[0].id = editingId;
     parts[0].createdAt = old.createdAt;
     S.transactions.push(...parts);
-    toast('更新しました');
+    const inst = syncInstallmentAfterEdit(editingId);
+    toast(inst === 'removed' ? '更新しました（クレカの一括の支出ではなくなったので分割を解除しました）' : '更新しました');
   } else {
     S.transactions.push(...parts);
     toast('記帳しました ✓');
@@ -3739,8 +4077,14 @@ function saveEntry() {
 }
 
 function editTx(id) {
-  const t = S.transactions.find(t => t.id === id);
+  let t = S.transactions.find(t => t.id === id);
   if (!t) return;
+  // 分割手数料の記録は単独で直さず、元の利用の分割パネルから直す
+  const feeOwner = t.installmentFeeFor && activeInstallments().find(a => a.inst.id === t.installmentFeeFor);
+  if (feeOwner) {
+    t = feeOwner.tx; id = t.id;
+    toast('手数料は元の利用の「分割払い」から変更できます');
+  }
   editingId = id;
   const group = t.splitId ? S.transactions.filter(x => x.splitId === t.splitId) : [t];
   const primary = group[0];
@@ -3763,6 +4107,8 @@ function editTx(id) {
   renderEntryReceipt();
   $('entry-save').textContent = '更新する';
   $('entry-delete').style.display = 'block';
+  installmentDraft = null;
+  renderInstallmentPanel();
   showView('entry');
 }
 
@@ -3774,6 +4120,7 @@ async function deleteEntry() {
   S.transactions = target?.splitId
     ? S.transactions.filter(t => t.splitId !== target.splitId)
     : S.transactions.filter(t => t.id !== editingId);
+  removeInstallmentFor(editingId);
   persist();
   resetEntryForm();
   showView('history');
@@ -4233,6 +4580,9 @@ function billingEditor(m) {
       </div>
       <label>引き落とし口座（支払日にここから残高が引かれます）</label>
       <select id="b-debit" onchange="updateBillingDraft('debitMethodId', this.value)">${debitOptions || '<option value="">（現金・銀行の支払い方法がありません）</option>'}</select>
+      <label>分割払いの実質年率（%）</label>
+      <input type="number" id="b-rate" inputmode="decimal" step="0.1" min="0" max="30" value="${installmentRateOf({ billing: b })}" oninput="updateBillingDraft('installmentRate', this.value)">
+      <div class="empty" style="padding:4px 0 0;text-align:left">明細や会員サイトの「分割払い手数料」に書いてあります（多くは12〜15%）。あとから分割の手数料の目安に使います</div>
       <div class="row2" style="margin-top:10px">
         <div><button class="btn-sub" style="width:100%;padding:10px 0" onclick="saveBilling('${m.id}')">保存</button></div>
         <div><button class="btn-mini" style="width:100%;padding:10px 0" onclick="closeBilling()">キャンセル</button></div>
@@ -4274,6 +4624,7 @@ function saveBilling(id) {
     payMonthOffset: pick('payMonthOffset', 'b-offset'),
     payDay: pick('payDay', 'b-payday'),
     debitMethodId: (draft.debitMethodId !== undefined ? draft.debitMethodId : $('b-debit')?.value) || null,
+    installmentRate: installmentRateOf({ billing: { installmentRate: pick('installmentRate', 'b-rate') } }),
   };
   editingBillingId = null;
   editingBillingDraft = null;
@@ -4604,6 +4955,7 @@ const DEFAULT_DATA = {
   student: {},
   loans: [],
   goals: [],
+  installments: [],
 };
 
 function normalizeData(data) {
@@ -4620,6 +4972,9 @@ function normalizeData(data) {
   data.student = data.student || {};
   data.loans = Array.isArray(data.loans) ? data.loans : [];
   data.goals = Array.isArray(data.goals) ? data.goals : [];
+  data.installments = Array.isArray(data.installments)
+    ? data.installments.filter(i => i && i.txId && Number(i.count) >= 2 && /^\d{4}-\d{2}$/.test(i.startYm || ''))
+    : [];
   return data;
 }
 
