@@ -238,6 +238,7 @@
   .credit-bill-row .info { flex-basis:170px; }
   .credit-bill-amount { text-align:right; }
   .credit-bill-auto { margin-top:2px; color:var(--muted); font-size:10px; white-space:nowrap; }
+  .credit-bill-row .installment-wrap { width:100%; }
   .credit-bill-actions { width:100%; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
   .chip {
     font-size: 11px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600;
@@ -1035,6 +1036,7 @@ let selectedCollectingCardId = null;
 let entryType = 'expense';
 let editingId = null;               // 編集中の記録ID
 let installmentDraft = null;        // 分割パネルで選んでいる回数・開始月・手数料
+let billSplitDraft = null;          // 請求まるごと分割で選んでいる内容 { methodId, billYm, count, startYm, feeInput }
 let entryRecurringId = null;        // 固定費からの記帳
 let editingRecId = null;            // 編集中の固定費ID
 let cloudClient = null;
@@ -2381,6 +2383,7 @@ function installmentSchedule(inst, principal) {
 function activeInstallments() {
   const out = [];
   for (const inst of S.installments || []) {
+    if (inst.kind === 'bill') continue;
     const tx = S.transactions.find(t => t.id === inst.txId);
     if (!tx || tx.type !== 'expense' || tx.splitId) continue;
     const method = S.paymentMethods.find(m => m.id === tx.methodId && m.type === 'credit' && m.billing);
@@ -2388,6 +2391,25 @@ function activeInstallments() {
     out.push({ inst, tx, method });
   }
   return out;
+}
+
+/* 請求1回分をまるごと分割する（カードの「まとめて分割」）。
+   元金は分割にした時点の請求額で固定する。それより後に増えた利用は元の月に一括で残る */
+function activeBillSplits() {
+  return (S.installments || []).filter(i => i.kind === 'bill' &&
+    S.paymentMethods.some(m => m.id === i.methodId && m.type === 'credit' && m.billing));
+}
+function billSplitFor(method, ym) {
+  return activeBillSplits().find(i => i.methodId === method.id && i.billYm === ym) || null;
+}
+function billSplitPortionsFor(method, ym) {
+  const items = [];
+  for (const inst of activeBillSplits()) {
+    if (inst.methodId !== method.id) continue;
+    const part = installmentSchedule(inst, inst.principal).find(x => x.ym === ym);
+    if (part) items.push({ billYm: inst.billYm, n: part.n, count: inst.count, amount: part.amount });
+  }
+  return { items, amount: items.reduce((s, x) => s + x.amount, 0) };
 }
 
 function installmentForTx(txId) {
@@ -2400,6 +2422,7 @@ function installmentExcludedTxIds() {
     ids.add(inst.txId);
     if (inst.feeTxId) ids.add(inst.feeTxId);
   }
+  for (const inst of activeBillSplits()) if (inst.feeTxId) ids.add(inst.feeTxId);
   return ids;
 }
 
@@ -2470,9 +2493,17 @@ function expectedBillFor(method, py, pm) {
   const pointsApplied = Math.min(pointsReserved, calculatedAmount);
   const autoAmount = calculatedAmount - pointsApplied;
   const adjustment = billAdjustmentFor(method, py, pm);
+  const ym = `${py}-${pad2(pm)}`;
+  const split = billSplitFor(method, ym);
+  const splitParts = billSplitPortionsFor(method, ym);
+  const beforeSplit = adjustment ? adjustment.amount : autoAmount;
   return {
     ...bill,
-    amount:adjustment ? adjustment.amount : autoAmount,
+    amount:Math.max(0, beforeSplit - (split ? split.principal : 0)) + splitParts.amount,
+    beforeSplitAmount:beforeSplit,
+    billSplit:split,
+    billSplitPartAmount:splitParts.amount,
+    billSplitParts:splitParts.items,
     calculatedAmount,
     autoAmount,
     pointsReserved,
@@ -2905,16 +2936,31 @@ function renderCreditBills() {
             <div class="sub">${fmtMD(b.payDate)} 引き落とし・${fmtMD(b.start)}〜${fmtMD(b.end)}利用分${b.scheduledFixedCount ? `・未記帳の固定費${b.scheduledFixedCount}件込み` : ''}${b.installmentCount ? `・分割${b.installmentCount}件 ${yen(b.installmentAmount)}込み` : ''}${b.manuallyAdjusted ? '・手動で調整' : ''}${b.pointsReserved > b.pointsApplied ? `・ポイント予約 ${yen(b.pointsReserved)} は請求額までしか使いません` : ''}</div>
           </div>
           <div class="credit-bill-amount"><div class="amt">${yen(b.amount)}</div>${creditBillAutoNote(b, '自動') ? `<div class="credit-bill-auto">${creditBillAutoNote(b, '自動')}</div>` : ''}</div>
-          ${b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.pointsApplied ? '<span class="chip adjusted">ポイント充当</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+          ${b.billSplit ? `<span class="chip adjusted">${b.billSplit.count}回払い</span>` : b.manuallyAdjusted ? '<span class="chip adjusted">調整済み</span>' : b.pointsApplied ? '<span class="chip adjusted">ポイント充当</span>' : b.settled ? '<span class="chip done">確定</span>' : '<span class="chip upcoming">集計中</span>'}
+          ${billSplitNoteHtml(c, b)}
           <div class="credit-bill-actions">
-            <button class="btn-mini" onclick="editCreditBillPoints('${c.id}',${py},${pm})">${b.pointsReserved ? 'ポイントを変更' : 'ポイント分を引く'}</button>
+            ${b.billSplit ? '' : `<button class="btn-mini" onclick="editCreditBillPoints('${c.id}',${py},${pm})">${b.pointsReserved ? 'ポイントを変更' : 'ポイント分を引く'}</button>
             <button class="btn-mini" onclick="editCreditBillAmount('${c.id}',${py},${pm})">支払額を調整</button>
-            ${b.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${c.id}',${py},${pm})">自動に戻す</button>` : ''}
+            ${b.manuallyAdjusted ? `<button class="btn-mini" onclick="resetCreditBillAmount('${c.id}',${py},${pm})">自動に戻す</button>` : ''}`}
+            ${billSplitActionsHtml(c, b, py, pm)}
           </div>
+          ${billSplitDraft && billSplitDraft.methodId === c.id && billSplitDraft.billYm === `${py}-${pad2(pm)}` ? billSplitEditorHtml(c, b) : ''}
         </div>`;
     }
   }
   $('credit-bills').innerHTML = html;
+}
+
+function billSplitActionsHtml(card, b, py, pm) {
+  const ym = `${py}-${pad2(pm)}`;
+  const open = billSplitStartOptions(card, ym).length > 0;
+  if (b.billSplit) {
+    if (!open || ymPayDate(card, b.billSplit.startYm) < todayStr()) return '';
+    return `<button class="btn-mini" onclick="openBillSplit('${card.id}',${py},${pm})">分割を変更</button>
+      <button class="btn-mini" onclick="cancelBillSplit('${card.id}','${ym}')">一括に戻す</button>`;
+  }
+  if (!open || !(b.beforeSplitAmount > 0)) return '';
+  return `<button class="btn-mini" onclick="openBillSplit('${card.id}',${py},${pm})">まとめて分割</button>`;
 }
 
 function selectCollectingCard(id) {
@@ -3921,6 +3967,150 @@ async function cancelInstallment() {
   });
 }
 
+function installmentChoiceRows(principal, rate, d, handler) {
+  return INSTALLMENT_COUNTS.map(n => {
+    const fee = installmentFeeEstimate(principal, n, rate);
+    const sched = installmentSchedule({ count: n, startYm: d.startYm, fee }, principal);
+    return `<tr class="pick${n === d.count ? ' on' : ''}" onclick="${handler}('count', ${n})">
+      <td>${n}回</td><td>${fee ? yen(fee) : '0円'}</td><td>${yen(sched[n > 1 ? 1 : 0].amount)}</td><td>${yen(principal + fee)}</td></tr>`;
+  }).join('');
+}
+
+/* ---------- 請求まるごと分割（請求の行から操作） ---------- */
+function billSplitStartOptions(method, billYm) {
+  return [0, 1, 2].map(i => ymAdd(billYm, i)).filter(ym => ymPayDate(method, ym) >= todayStr());
+}
+
+function openBillSplit(methodId, py, pm) {
+  const card = S.paymentMethods.find(m => m.id === methodId);
+  if (!card || !card.billing) return;
+  const billYm = `${py}-${pad2(pm)}`;
+  const current = billSplitFor(card, billYm);
+  const starts = billSplitStartOptions(card, billYm);
+  if (!starts.length) { toast('この請求はもう引き落とし済みです'); return; }
+  billSplitDraft = {
+    methodId, billYm,
+    count: current ? current.count : 3,
+    startYm: current && starts.includes(current.startYm) ? current.startYm : starts[0],
+    feeInput: current && current.feeManual ? String(current.fee) : '',
+  };
+  renderCreditBills();
+}
+
+function closeBillSplit() { billSplitDraft = null; renderCreditBills(); }
+
+function updateBillSplitDraft(field, value) {
+  if (!billSplitDraft) return;
+  billSplitDraft[field] = field === 'count' ? Number(value) : value;
+  if (field === 'count') billSplitDraft.feeInput = '';
+  renderCreditBills();
+}
+
+function syncBillSplitFeeTx(inst, card) {
+  const existing = inst.feeTxId ? S.transactions.find(t => t.id === inst.feeTxId) : null;
+  const memo = `分割手数料（${card.name} ${ymLabel(inst.billYm)}請求・${inst.count}回）`;
+  if (!inst.fee) {
+    if (existing) S.transactions = S.transactions.filter(t => t.id !== existing.id);
+    inst.feeTxId = null;
+    return;
+  }
+  ensureFeeCategory();
+  if (existing) { Object.assign(existing, { amount: inst.fee, memo }); return; }
+  const date = todayStr();
+  const feeTx = {
+    id: uid(), type: 'expense', date, amount: inst.fee, category: INSTALLMENT_FEE_CATEGORY,
+    methodId: card.id, memo, createdAt: Date.now(), dayOrder: nextDayOrder(date),
+    recurringId: null, installmentFeeFor: inst.id,
+  };
+  S.transactions.push(feeTx);
+  inst.feeTxId = feeTx.id;
+}
+
+function saveBillSplit() {
+  const d = billSplitDraft;
+  const card = d && S.paymentMethods.find(m => m.id === d.methodId);
+  if (!card || !card.billing) return;
+  const [py, pm] = [Number(d.billYm.slice(0, 4)), Number(d.billYm.slice(5, 7))];
+  const feeText = String(d.feeInput || '').trim();
+  const manualFee = feeText === '' ? null : Math.round(Number(feeText));
+  if (manualFee !== null && (!Number.isFinite(manualFee) || manualFee < 0)) { toast('手数料は0以上の数字で入力してください'); return; }
+  const before = JSON.stringify(S);
+  S.installments = S.installments || [];
+  let inst = billSplitFor(card, d.billYm);
+  // 元金は分割にした時点の請求額（既に分割済みなら、そのとき決めた額のまま）
+  const principal = inst ? inst.principal : expectedBillFor(card, py, pm).beforeSplitAmount;
+  if (!(principal > 0)) { toast('この請求はまだ0円なので分割できません'); return; }
+  const rate = installmentRateOf(card);
+  if (!inst) { inst = { id: uid(), kind: 'bill', methodId: card.id, billYm: d.billYm, principal, createdAt: Date.now(), feeTxId: null }; S.installments.push(inst); }
+  Object.assign(inst, {
+    count: d.count, startYm: d.startYm, rate,
+    fee: manualFee ?? installmentFeeEstimate(principal, d.count, rate),
+    feeManual: manualFee !== null,
+  });
+  syncBillSplitFeeTx(inst, card);
+  if (!persist()) { S = normalizeData(JSON.parse(before)); return; }
+  billSplitDraft = null;
+  render();
+  toastAction(`${ymLabel(inst.billYm)}の請求を${inst.count}回払いにしました ✓`, '元に戻す', () => {
+    S = normalizeData(JSON.parse(before));
+    persist(); render();
+    toast('元に戻しました ✓');
+  });
+}
+
+async function cancelBillSplit(methodId, billYm) {
+  if (!await appConfirm('この請求を一括払いに戻しますか？手数料の記録も消えます')) return;
+  const before = JSON.stringify(S);
+  const inst = (S.installments || []).find(i => i.kind === 'bill' && i.methodId === methodId && i.billYm === billYm);
+  if (!inst) return;
+  if (inst.feeTxId) S.transactions = S.transactions.filter(t => t.id !== inst.feeTxId);
+  S.installments = S.installments.filter(i => i !== inst);
+  if (!persist()) { S = normalizeData(JSON.parse(before)); return; }
+  billSplitDraft = null;
+  render();
+  toastAction('一括払いに戻しました', '元に戻す', () => {
+    S = normalizeData(JSON.parse(before));
+    persist(); render();
+    toast('元に戻しました ✓');
+  });
+}
+
+function billSplitEditorHtml(card, b) {
+  const d = billSplitDraft;
+  const principal = b.billSplit ? b.billSplit.principal : b.beforeSplitAmount;
+  const rate = installmentRateOf(card);
+  const starts = billSplitStartOptions(card, d.billYm);
+  const startOpts = starts.map(ym => `<option value="${ym}" ${ym === d.startYm ? 'selected' : ''}>${ymLabel(ym)}（${fmtMD(ymPayDate(card, ym))}）</option>`).join('');
+  return `<div class="installment-wrap">
+    <h3>${ymLabel(d.billYm)}の請求 ${yen(principal)} を分割</h3>
+    <div class="installment-note">回数を選んでください。手数料は年${rate}%で計算した目安です${b.billSplit ? '' : '。この後に増えた利用は元の月に一括で残ります'}</div>
+    <table class="installment-table">
+      <thead><tr><th>回数</th><th>手数料</th><th>毎月</th><th>支払総額</th></tr></thead>
+      <tbody>${installmentChoiceRows(principal, rate, d, 'updateBillSplitDraft')}</tbody>
+    </table>
+    <div class="row2">
+      <div><label>初回の引き落とし</label><select onchange="updateBillSplitDraft('startYm', this.value)">${startOpts}</select></div>
+      <div><label>手数料（明細の額）</label><input type="number" inputmode="numeric" placeholder="目安 ${installmentFeeEstimate(principal, d.count, rate)}" value="${esc(d.feeInput)}" oninput="billSplitDraft.feeInput = this.value"></div>
+    </div>
+    <div class="installment-actions">
+      <button class="btn-sub" onclick="saveBillSplit()">${d.count}回払いにする</button>
+      <button class="btn-mini" onclick="closeBillSplit()">やめる</button>
+    </div>
+  </div>`;
+}
+
+// 請求の行の下に出す分割の説明
+function billSplitNoteHtml(card, b) {
+  const notes = [];
+  if (b.billSplit) {
+    const s = b.billSplit;
+    const sched = installmentSchedule(s, s.principal);
+    notes.push(`${yen(s.principal)} を${s.count}回払いに変更済み（${ymLabel(sched[0].ym)}〜${ymLabel(sched[sched.length - 1].ym)}・手数料 ${yen(s.fee)}${s.feeManual ? '' : '・目安'}）`);
+  }
+  for (const p of b.billSplitParts || []) if (!b.billSplit || p.billYm !== b.billSplit.billYm) notes.push(`${ymLabel(p.billYm)}請求の分割 ${p.n}/${p.count}回目 ${yen(p.amount)} 込み`);
+  return notes.length ? `<div class="installment-note" style="width:100%">${notes.join('<br>')}</div>` : '';
+}
+
 function renderInstallmentPanel() {
   const wrap = $('installment-wrap');
   if (!wrap) return;
@@ -3964,12 +4154,7 @@ function renderInstallmentPanel() {
   }
 
   const d = installmentDraft;
-  const rows = INSTALLMENT_COUNTS.map(n => {
-    const fee = installmentFeeEstimate(tx.amount, n, rate);
-    const sched = installmentSchedule({ count: n, startYm: d.startYm, fee }, tx.amount);
-    return `<tr class="pick${n === d.count ? ' on' : ''}" onclick="updateInstallmentDraft('count', ${n})">
-      <td>${n}回</td><td>${fee ? yen(fee) : '0円'}</td><td>${yen(sched[n > 1 ? 1 : 0].amount)}</td><td>${yen(tx.amount + fee)}</td></tr>`;
-  }).join('');
+  const rows = installmentChoiceRows(tx.amount, rate, d, 'updateInstallmentDraft');
   const startOpts = starts.map(ym => `<option value="${ym}" ${ym === d.startYm ? 'selected' : ''}>${ymLabel(ym)}（${fmtMD(ymPayDate(method, ym))}）</option>`).join('');
   const autoFee = installmentFeeEstimate(tx.amount, d.count, rate);
   wrap.innerHTML = `<h3>分割に変更：${yen(tx.amount)}</h3>
@@ -4084,6 +4269,9 @@ function editTx(id) {
   if (feeOwner) {
     t = feeOwner.tx; id = t.id;
     toast('手数料は元の利用の「分割払い」から変更できます');
+  } else if (t.installmentFeeFor && activeBillSplits().some(i => i.id === t.installmentFeeFor)) {
+    toast('この手数料は、カードの請求の「分割を変更」から変更できます');
+    return;
   }
   editingId = id;
   const group = t.splitId ? S.transactions.filter(x => x.splitId === t.splitId) : [t];
@@ -4973,7 +5161,8 @@ function normalizeData(data) {
   data.loans = Array.isArray(data.loans) ? data.loans : [];
   data.goals = Array.isArray(data.goals) ? data.goals : [];
   data.installments = Array.isArray(data.installments)
-    ? data.installments.filter(i => i && i.txId && Number(i.count) >= 2 && /^\d{4}-\d{2}$/.test(i.startYm || ''))
+    ? data.installments.filter(i => i && Number(i.count) >= 2 && /^\d{4}-\d{2}$/.test(i.startYm || '') &&
+        (i.kind === 'bill' ? i.methodId && /^\d{4}-\d{2}$/.test(i.billYm || '') && Number(i.principal) > 0 : i.txId))
     : [];
   return data;
 }
